@@ -1658,6 +1658,7 @@ function rParametres(){
   
   var pg=document.createElement("div");pg.className="pg";
   
+  // -- MODULE EXPORT GLOBAL EXCEL (.xlsx) --
   var cExp=document.createElement("div");cExp.className="pc";cExp.style.gridColumn="1 / -1";
   cExp.innerHTML=`<h3>📤 Exporter l'intégralité du planning (Excel .xlsx)</h3>
   <p style="font-size:13px;color:var(--tx2);margin-bottom:16px;line-height:1.5;">Ce bouton permet de générer un véritable fichier Excel (.xlsx) contenant toutes les saisies de congés, demi-journées et commentaires actuels, formaté pour des analyses dans Excel.</p>
@@ -1685,6 +1686,7 @@ function rParametres(){
   c2.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Pour ajouter un nouveau service ou groupe, tapez simplement son nom lors de la création ou modification d\'un employé. Il s\'ajoutera automatiquement ici !</i></p>';
   pg.appendChild(c2);
   
+  // -- MODULE IMPORT EXCEL (.xlsx) --
   var c3=document.createElement("div");c3.className="pc";c3.style.gridColumn="1 / -1";
   c3.innerHTML=`<h3>📥 Importer un fichier Excel (.xlsx) vers la base de données</h3>
   <p style="font-size:12px;color:var(--tx2);margin-bottom:12px;line-height:1.5;">L'algorithme a été amélioré pour ignorer les colonnes de Totaux, lire à l'intérieur des cellules fusionnées et gérer les demi-journées. L'importation est blindée.</p>
@@ -1710,6 +1712,7 @@ function bindAll(){
   if(pY)pY.addEventListener("click",function(){ST.year--;render();});
   if(nY)nY.addEventListener("click",function(){ST.year++;render();});
   
+  // -- Code Admin --
   var adminCode = document.getElementById("adminCode");
   if(adminCode) {
       adminCode.addEventListener("input", function(e) {
@@ -1728,6 +1731,7 @@ function bindAll(){
       });
   }
 
+  // Navigation Rapide des mois (Scroll vers l'axe X)
   var mbs=document.querySelectorAll(".month-btn");
   for(var i=0;i<mbs.length;i++){(function(b){
       b.addEventListener("click",function(e){
@@ -1743,6 +1747,7 @@ function bindAll(){
       });
   })(mbs[i]);}
 
+  // ScrollSpy pour les mois (Mettre en surbrillance le mois visible)
   var gcElem = document.querySelector(".gc");
   if(gcElem && ST.tab === "planning") {
       gcElem.addEventListener("scroll", function() {
@@ -1794,6 +1799,7 @@ function bindAll(){
   if(clBm)clBm.addEventListener("click",function(){ST.bModal=null;render();});
   if(bmOv)bmOv.addEventListener("click",function(e){if(e.target===bmOv){ST.bModal=null;render();}});
   
+  // Tuto Modale events
   var bHelp = document.getElementById("bHelp");
   if(bHelp)bHelp.addEventListener("click",function(){ST.tutoModal=true;render();});
   var clTuto = document.getElementById("clTuto"), tutoOv = document.getElementById("tutoOv"), btnGotIt = document.getElementById("btnGotIt");
@@ -1886,7 +1892,7 @@ function bindAll(){
 
                  if (conflict) {
                      showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer.", true);
-                     return; 
+                     return; // On annule l'action
                  }
 
                  if (ST.selectedPeriod === 'full') {
