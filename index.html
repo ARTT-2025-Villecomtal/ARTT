@@ -1863,39 +1863,79 @@ function bindAppEvents(){
                  // LOGIQUE ASTREINTE : Force sur "Matin" (am) pour libérer le bas
                  var targetPeriod = ST.selectedPeriod;
                  var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
-                 if(causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1 && targetPeriod === 'full') {
-                     targetPeriod = 'am'; 
+                 var isAstreinte = false;
+                 if(causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
+                     isAstreinte = true;
+                     if (targetPeriod === 'full') targetPeriod = 'am'; 
                  }
                  
-                 // SAISIE NORMALE (Avec blocage anti-écrasement)
+                 // --- NOUVELLE LOGIQUE TOLÉRANCE ASTREINTE ---
                  var conflict = false;
-                 if (targetPeriod === 'full') {
-                     if (existing) conflict = true;
-                 } else if (targetPeriod === 'am') {
-                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
-                 } else if (targetPeriod === 'pm') {
-                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
-                 }
+                 var bypassSpecial = false;
 
-                 if (conflict) {
-                     showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
-                     return; 
-                 }
-
-                 if (targetPeriod === 'full') {
-                     ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
-                     upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
-                     deletes.push(baseKey+'-am', baseKey+'-pm');
-                 } else if (targetPeriod === 'am') {
-                     if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
-                     ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
+                 // Cas 1 : On ajoute Astreinte (am) sur une case Pleine (full) existante
+                 if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
+                     var oldCause = existing.causeId;
+                     var oldCmt = existing.comment;
+                     ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
                      upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                     if(existing && existing.pm) deletes.push(baseKey);
-                 } else if (targetPeriod === 'pm') {
-                     if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
-                     ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
-                     upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                     if(existing && existing.am) deletes.push(baseKey);
+                     upserts.push({id: baseKey+'-pm', cause_id: oldCause, comment: oldCmt});
+                     deletes.push(baseKey);
+                     bypassSpecial = true;
+                 }
+                 // Cas 2 : On ajoute un motif Plein (full) sur une demi-case existante
+                 else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
+                     var exAmAst = false, exPmAst = false;
+                     if(existing.am) {
+                         var cObj1 = ST.causes.find(function(c){return c.id === existing.am.causeId;});
+                         if(cObj1 && cObj1.label.toUpperCase().indexOf('ASTREINTE') > -1) exAmAst = true;
+                     }
+                     if(existing.pm) {
+                         var cObj2 = ST.causes.find(function(c){return c.id === existing.pm.causeId;});
+                         if(cObj2 && cObj2.label.toUpperCase().indexOf('ASTREINTE') > -1) exPmAst = true;
+                     }
+                     
+                     if (exAmAst && !existing.pm) {
+                         ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
+                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
+                         bypassSpecial = true;
+                     } else if (exPmAst && !existing.am) {
+                         ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
+                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
+                         bypassSpecial = true;
+                     }
+                 }
+
+                 if (!bypassSpecial) {
+                     // SAISIE NORMALE (Avec blocage anti-écrasement)
+                     if (targetPeriod === 'full') {
+                         if (existing) conflict = true;
+                     } else if (targetPeriod === 'am') {
+                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
+                     } else if (targetPeriod === 'pm') {
+                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
+                     }
+
+                     if (conflict) {
+                         showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
+                         return; 
+                     }
+
+                     if (targetPeriod === 'full') {
+                         ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
+                         upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
+                         deletes.push(baseKey+'-am', baseKey+'-pm');
+                     } else if (targetPeriod === 'am') {
+                         if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
+                         ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
+                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
+                         if(existing && existing.pm) deletes.push(baseKey);
+                     } else if (targetPeriod === 'pm') {
+                         if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
+                         ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
+                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
+                         if(existing && existing.am) deletes.push(baseKey);
+                     }
                  }
              }
              
