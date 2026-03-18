@@ -16,19 +16,20 @@
   --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --primary: #1D9E75;
 }
-@media(prefers-color-scheme:dark){:root{
+:root[data-theme="dark"]{
   --bg1:#1c1c1e;--bg2:#2c2c2e;--bg3:#3a3a3c;
   --tx1:#f2f2f7;--tx2:#aeaeb2;--tx3:#636366;
   --bd1:rgba(255,255,255,0.12);--bd2:rgba(255,255,255,0.25);
-}}
+}
 body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13px; overflow:hidden;}
 
+/* Scrollbar styles for smooth horizontal scrolling */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background-color: var(--bd2); border-radius: 4px; }
 ::-webkit-scrollbar-track { background-color: transparent; }
 
 /* === LAYOUT PRINCIPAL === */
-.app{display:flex;flex-direction:column;height:100vh;min-height:600px}
+.app{display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden;}
 .topbar{background:var(--bg1);border-bottom:0.5px solid var(--bd1);padding:10px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 
 .logo-container {display:flex;flex-direction:column;align-items:center;margin-right:10px;}
@@ -58,8 +59,9 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .search-input {padding:8px 12px;border:1px solid var(--bd1);border-radius:8px;background:var(--bg1);color:var(--tx1);font-size:13px;width:180px;margin-left:10px;}
 .search-input:focus {outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(29,158,117,0.2);}
 
-.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
-.planning{display:flex;flex-direction:column;height:100%;overflow:hidden}
+/* === CONTENU === */
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;}
+.planning{display:flex;flex-direction:column;height:100%;overflow:hidden;min-height:0;}
 
 .legend-bar{background:var(--bg1);border-bottom:0.5px solid var(--bd1);padding:10px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .legend-pill-container {display:flex; gap:8px; align-items:center;}
@@ -84,7 +86,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .month-btn.active{background:var(--primary);color:white;border-color:var(--primary);box-shadow:0 2px 5px rgba(29,158,117,0.3)}
 
 /* === GRILLE DE PLANNING === */
-.gc{flex:1;overflow:auto; scroll-behavior: smooth;}
+.gc{flex:1;overflow:auto; scroll-behavior: smooth; min-height:0;}
 .ghdr{display:flex;flex-direction:column;position:sticky;top:0;z-index:20;background:var(--bg1);box-shadow:0 2px 5px rgba(0,0,0,0.05)}
 
 .ghdr-w, .ghdr-d { display:flex; min-width: max-content; background:var(--bg1); } 
@@ -213,42 +215,44 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .toast{position:fixed;bottom:30px;right:30px;background:var(--bg1);border:1px solid var(--bd1);border-left:4px solid var(--primary);border-radius:var(--r1);padding:14px 24px;font-size:14px;font-weight:600;z-index:200;box-shadow:0 10px 25px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;animation:slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)}
 @keyframes slideIn{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
 
+/* === OPTIMISATIONS MOBILES / SMARTPHONES === */
 @media (max-width: 768px) {
-    .topbar { flex-direction: column; align-items: stretch; padding: 10px; gap: 10px; }
-    .logo-container { width: 100%; flex-direction: row !important; justify-content: center; margin-bottom: 5px; gap: 8px;}
-    .logo-container img { height: 28px !important; margin:0 !important; }
-    .sync-indicator { margin-left: auto; margin-right: auto; }
-    .year-nav { justify-content: space-between; width: 100%; font-size: 16px; margin: 5px 0; }
+    .app { min-height: auto; }
+    .topbar { flex-direction: row; flex-wrap: wrap; padding: 6px 10px; gap: 8px; justify-content: space-between; }
+    .logo-container { flex-direction: row !important; margin: 0 !important; gap: 6px; }
+    .logo-container img { height: 24px !important; width: 24px !important; margin:0 !important; position: static !important; }
+    .logo-container span { display: none; } /* Gain de place */
+    .sync-indicator { margin-left: 0; padding: 4px 8px; font-size: 10px; }
+    .year-nav { font-size: 14px; flex-grow: 1; justify-content: center; }
     
-    .nav-tabs { flex-wrap: nowrap; overflow-x: auto; margin-left: 0; padding-bottom: 5px; justify-content: flex-start; }
-    .nav-tab { padding: 6px 12px; font-size: 13px; }
-    .nav-tab[data-tab="planning"] { padding: 8px 16px; font-size: 14px; }
-    #adminCode { font-size: 16px !important; }
+    .nav-tabs { flex-wrap: nowrap; overflow-x: auto; margin-left: 0; padding-bottom: 2px; width: 100%; justify-content: flex-start; }
+    .nav-tab { padding: 6px 12px; font-size: 12px; }
+    .nav-tab[data-tab="planning"] { padding: 6px 14px; font-size: 13px; }
+    #adminCode { font-size: 16px !important; width: 90px; }
 
-    .bilan-btns { width: 100%; overflow-x: auto; flex-wrap: nowrap; margin-left: 0; padding-bottom: 5px; justify-content: flex-start; }
-    .bilan-btn { font-size: 12px; padding: 8px 12px; }
+    .bilan-btns { width: 100%; overflow-x: auto; flex-wrap: nowrap; margin-left: 0; padding-bottom: 2px; justify-content: flex-start; }
+    .bilan-btn { font-size: 11px; padding: 6px 10px; }
     
-    .filters { width: 100%; margin-left: 0; }
-    .search-input { width: 100%; margin-left: 0; font-size: 16px !important; }
+    .filters { display: none; } /* Masquer la recherche globale sur mobile pour sauver l'espace vertical */
 
-    .legend-bar { flex-direction: column; align-items: stretch; padding: 10px; gap: 10px; }
-    .legend-pill-container { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; width:100%; }
-    .legend-pill { padding: 6px 12px; font-size: 11px; }
-    .period-toggles { margin-left: 0; overflow-x: auto; width: 100%; justify-content: flex-start; }
-    .period-btn { font-size: 12px; padding: 6px 10px; }
-    
-    .legend-extras { margin-left: 0; padding-left: 0; border-left: none; flex-wrap: wrap; justify-content: center; width: 100%; gap: 10px; }
-    .leg-item { font-size: 11px; }
+    .legend-bar { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; gap: 10px; }
+    .legend-pill-container > div:first-child { display: none; } /* Masquer le texte "Saisie rapide" */
+    .legend-pill-container { flex-wrap: nowrap; flex-shrink: 0; width: auto; padding: 0; }
+    .legend-pill { padding: 6px 10px; font-size: 11px; }
+    .period-toggles { margin-left: 0; flex-shrink: 0; width: auto; }
+    .period-btn { font-size: 11px; padding: 6px 8px; }
+    .legend-extras { display: none; } /* Masquer légende secondaire */
 
-    .month-nav { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px; }
-    .month-filters { flex-direction: column; width: 100%; }
-    .month-filters select { width: 100%; font-size: 16px !important; }
-    .month-btns-wrap { overflow-x: auto; padding-bottom: 5px; justify-content: flex-start; width: 100%; }
+    .month-nav { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 10px; padding: 6px 10px; }
+    .month-filters { flex-direction: row; flex-wrap: nowrap; width: auto; flex-shrink: 0; }
+    .month-filters select { width: auto; font-size: 13px !important; padding: 4px 8px; }
+    .month-btns-wrap { overflow-x: visible; width: auto; flex-shrink: 0; }
 
-    .stub-w, .stub-d, .nc { width: 100px !important; min-width: 100px !important; max-width: 100px !important; padding: 6px !important; }
-    .nc .nom { font-size: 11px !important; white-space: normal !important; line-height: 1.2; }
-    .nc .svc, .nc .grp { display: none; }
-    .btn-bp { font-size: 12px !important; padding: 2px; }
+    /* Grille Planning Mobile */
+    .stub-w, .stub-d, .nc { width: 90px !important; min-width: 90px !important; max-width: 90px !important; padding: 4px !important; }
+    .nc .nom { font-size: 10px !important; white-space: normal !important; line-height: 1.1; }
+    .nc .svc, .nc .grp { display: none; } 
+    .btn-bp { display: none; } /* Masquer le bouton de stat sur le nom */
     
     .modal { width: 95%; min-width: 95%; padding: 16px; margin: 10px; }
     .half-day-split { flex-direction: column; gap:12px; }
@@ -272,6 +276,16 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 
 <script>
 "use strict";
+
+// === GESTION DU THEME SOMBRE / CLAIR ===
+(function(){
+  var savedTheme = localStorage.getItem('artt-theme');
+  if(savedTheme) {
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
 
 // === CONFIGURATION BASE DE DONNÉES (Google Sheets) ===
 // URL Google Apps Script configurée :
@@ -590,6 +604,20 @@ function processExcelImport(arrayBuffer) {
             });
             return cause ? cause.id : null;
         };
+
+        // CORRECTEUR D'ENCODAGE UTF-8
+        function fixEncoding(str) {
+            if (!str) return "";
+            try {
+                if (str.indexOf('Ã') > -1) {
+                    var escaped = Array.prototype.map.call(str, function(c) {
+                        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                    }).join('');
+                    return decodeURIComponent(escaped);
+                }
+            } catch(e) { }
+            return str;
+        }
         
         for(var r = R_days + 1; r <= range.e.r; r++) {
             var empId = null;
@@ -650,7 +678,7 @@ function processExcelImport(arrayBuffer) {
                   
                   if(causeId) {
                      var comment = "";
-                     var period = 'full';
+                     var period = 'full'; // Import toujours en journée complète par défaut
                      
                      if (valCell.c && valCell.c.length > 0) {
                          comment = valCell.c.map(function(cmt){ return cmt.t; }).join(" | ").replace(/\n/g, " ").trim();
@@ -662,29 +690,17 @@ function processExcelImport(arrayBuffer) {
                          if (comment) comment += " (" + rawVal.trim() + ")";
                          else comment = rawVal.trim();
                      }
-                     
-                     var fullTextForPeriod = (rawVal + " " + comment).toLowerCase();
-                     if (fullTextForPeriod.indexOf('matin') > -1 || fullTextForPeriod.indexOf('1/2') > -1) {
-                         period = 'am';
-                     } else if (fullTextForPeriod.indexOf('aprem') > -1 || fullTextForPeriod.indexOf('après') > -1 || fullTextForPeriod.indexOf('apres') > -1) {
-                         period = 'pm';
-                     }
+
+                     comment = fixEncoding(comment);
                      
                      if (!comment) comment = "Import Excel";
                      
                      var baseKey = eKey(empId, dateObj.y, dateObj.m, dateObj.d);
-                     var dbId = baseKey + (period==='full' ? '' : '-'+period);
                      
                      if(!ST.events[baseKey]) ST.events[baseKey] = {type:'empty'};
-                     if(period === 'full'){
-                         ST.events[baseKey] = {type:'full', causeId:causeId, comment:comment};
-                     } else {
-                         if(ST.events[baseKey].type !== 'half') ST.events[baseKey] = {type:'half', am:null, pm:null};
-                         if(period === 'am') ST.events[baseKey].am = {causeId:causeId, comment:comment};
-                         if(period === 'pm') ST.events[baseKey].pm = {causeId:causeId, comment:comment};
-                     }
+                     ST.events[baseKey] = {type:'full', causeId:causeId, comment:comment};
                      
-                     eventsToPush.push({id: dbId, cause_id: causeId, comment: comment});
+                     eventsToPush.push({id: baseKey, cause_id: causeId, comment: comment});
                      count++;
                   }
                }
@@ -1023,6 +1039,9 @@ function render(){
   parts.push('<div class="nav-tabs">');
   parts.push('<button class="nav-tab'+(ST.tab==='planning'?' active':'')+'" data-tab="planning">Planning</button>');
   
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  parts.push('<button class="nav-tab" id="themeToggle" title="Mode Sombre / Clair">' + (isDark ? '☀️ Clair' : '🌙 Sombre') + '</button>');
+
   if (ST.isAdmin) {
       parts.push('<button class="nav-tab'+(ST.tab==='personnel'?' active':'')+'" data-tab="personnel">Personnel</button>');
       parts.push('<button class="nav-tab'+(ST.tab==='parametres'?' active':'')+'" data-tab="parametres">Paramètres</button>');
@@ -1704,10 +1723,23 @@ function rParametres(){
 function bindAll(){
   var navTabs=document.querySelectorAll(".nav-tab");
   for(var i=0;i<navTabs.length;i++){(function(t){t.addEventListener("click",function(){
-      if(t.id === "lockBtn") return; 
-      ST.tab=t.getAttribute("data-tab");render();
+      if(t.id === "lockBtn" || t.id === "themeToggle") return; 
+      if(t.hasAttribute("data-tab")) {
+          ST.tab=t.getAttribute("data-tab");render();
+      }
   });})(navTabs[i]);}
   
+  var themeToggle = document.getElementById("themeToggle");
+  if(themeToggle) {
+      themeToggle.addEventListener("click", function() {
+          var currentTheme = document.documentElement.getAttribute('data-theme');
+          var newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', newTheme);
+          localStorage.setItem('artt-theme', newTheme);
+          render(); 
+      });
+  }
+
   var pY=document.getElementById("pY"),nY=document.getElementById("nY");
   if(pY)pY.addEventListener("click",function(){ST.year--;render();});
   if(nY)nY.addEventListener("click",function(){ST.year++;render();});
@@ -1918,7 +1950,8 @@ function bindAll(){
              }
              
           } else {
-             ST.modal={pid:pid,day:day,month:mo,key:baseKey};render();
+             // Modification demandée : Aucun outil sélectionné -> le clic gauche ne fait rien !
+             // On supprime l'ouverture de la modale ici.
           }
       }
     });
