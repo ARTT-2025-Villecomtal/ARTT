@@ -273,6 +273,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 </head>
 <body>
 <div class="app" id="app"></div>
+<div id="modal-container"></div> <!-- Conteneur dédié pour les modales (Anti-Saut) -->
 
 <script>
 "use strict";
@@ -288,7 +289,6 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 })();
 
 // === CONFIGURATION BASE DE DONNÉES (Google Sheets) ===
-// URL Google Apps Script configurée :
 var GAS_URL = "https://script.google.com/macros/s/AKfycbwtgIAd33LQ6yVKFWB89TCddMGtZlxQRkfepLjpvZvTYvu1vPoGuiGiCBwj8SaaRwbhqQ/exec";
 
 // GESTION DES COMMENTAIRES ET PERIODES
@@ -345,7 +345,6 @@ function loadDB(){
       });
     }
     
-    // Nettoyage de mémoire
     Object.keys(ev).forEach(function(k){
         if(ev[k].type === 'empty' || (ev[k].type === 'half' && !ev[k].am && !ev[k].pm)) delete ev[k];
     });
@@ -417,7 +416,7 @@ function getNameColWidth() {
     return stub ? stub.offsetWidth : 180;
 }
 
-// === LOGIQUE IMPORT EXCEL VERS GOOGLE SHEETS ===
+// === LOGIQUE IMPORT EXCEL ===
 function batchSend(arr, index, callback) {
     if(!checkGasUrl()) return;
     
@@ -605,15 +604,14 @@ function processExcelImport(arrayBuffer) {
             return cause ? cause.id : null;
         };
 
-        // CORRECTEUR D'ENCODAGE UTF-8
+        // CORRECTEUR D'ENCODAGE UTF-8 pour Excel
         function fixEncoding(str) {
             if (!str) return "";
             try {
                 if (str.indexOf('Ã') > -1) {
-                    var escaped = Array.prototype.map.call(str, function(c) {
+                    return decodeURIComponent(Array.prototype.map.call(str, function(c) {
                         return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-                    }).join('');
-                    return decodeURIComponent(escaped);
+                    }).join(''));
                 }
             } catch(e) { }
             return str;
@@ -678,7 +676,7 @@ function processExcelImport(arrayBuffer) {
                   
                   if(causeId) {
                      var comment = "";
-                     var period = 'full'; // Import toujours en journée complète par défaut
+                     var period = 'full'; // Import FORCÉ en journée complète
                      
                      if (valCell.c && valCell.c.length > 0) {
                          comment = valCell.c.map(function(cmt){ return cmt.t; }).join(" | ").replace(/\n/g, " ").trim();
@@ -722,7 +720,7 @@ function processExcelImport(arrayBuffer) {
                 logHtml += "<br><span style='color:#F97316; font-size:11px'>Lignes ignorées (noms introuvables) : " + unrecognized.join(', ') + "</span>";
             }
             if(log) log.innerHTML = logHtml;
-            render();
+            renderApp();
             showToast(count + " absences importées");
         });
         
@@ -951,74 +949,78 @@ function selOpts(arr,selected){
 }
 
 // === MISE À JOUR VISUELLE ISOLÉE DE LA CASE ===
-function updateCellVisual(ec, baseKey, y, mo, d) {
-    var ev = ST.events[baseKey];
-    var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1);
+function applyCellVisuals(ec, ev) {
+    ec.innerHTML = '';
+    ec.style.backgroundImage = '';
+    ec.style.backgroundColor = '';
+    ec.title = '';
+    if(!ev) return;
     
+    if(ev.type === 'full') {
+        var col = cColor(ev.causeId);
+        ec.style.backgroundColor = col;
+        ec.title = cLabel(ev.causeId)+(ev.comment?"\n"+ev.comment:"");
+        ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
+        if(ev.comment && ev.comment.trim() && ev.comment!=="Import Excel"){ ec.innerHTML += '<span class="ev-dot"></span>'; }
+    } else if (ev.type === 'half') {
+        var amIsAst = ev.am && cLabel(ev.am.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
+        var pmIsAst = ev.pm && cLabel(ev.pm.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
+        
+        var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
+        var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
+        
+        // ASTREINTE force la coupure à l'horizontale, sinon en diagonale par défaut
+        if(amIsAst || pmIsAst) {
+            ec.style.backgroundImage = 'linear-gradient(to bottom, '+amCol+' 50%, '+pmCol+' 50%)';
+        } else {
+            ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
+        }
+        
+        var title = "";
+        var lbls = [];
+        var hasCmt = false;
+        
+        if(ev.am){
+            title += cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment ? " - "+ev.am.comment : "");
+            lbls.push(cShort(ev.am.causeId));
+            if(ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
+        }
+        if(ev.pm){
+            if(title) title += "\n";
+            title += cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment ? " - "+ev.pm.comment : "");
+            lbls.push(cShort(ev.pm.causeId));
+            if(ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
+        }
+        
+        ec.title = title;
+        var fs = lbls.length > 1 ? "10px" : "12px";
+        var ls = lbls.length > 1 ? "-0.5px" : "normal";
+        ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
+        if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
+    }
+}
+
+function updateCellVisual(ec, baseKey, y, mo, d) {
+    var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1);
     var cls2="ec";
     if(td)cls2+=" td";else if(fe)cls2+=" fe";else if(va)cls2+=" va";else if(we)cls2+=" we";
     if(mon || d===1)cls2+=" ms";
     ec.className=cls2;
     
-    ec.innerHTML = '';
-    ec.style.backgroundImage = '';
-    ec.style.backgroundColor = '';
-    
-    if(ev){
-      if(ev.type === 'full') {
-          var col = cColor(ev.causeId);
-          ec.style.backgroundColor = col;
-          ec.title = cLabel(ev.causeId)+(ev.comment?"\n"+ev.comment:"");
-          ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
-          if(ev.comment && ev.comment.trim() && ev.comment!=="Import Excel"){ ec.innerHTML += '<span class="ev-dot"></span>'; }
-      } else if (ev.type === 'half') {
-          var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
-          var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
-          ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
-          
-          var title = "";
-          var lbls = [];
-          var hasCmt = false;
-          
-          if(ev.am){
-              title += cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment ? " - "+ev.am.comment : "");
-              lbls.push(cShort(ev.am.causeId));
-              if(ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
-          }
-          if(ev.pm){
-              if(title) title += "\n";
-              title += cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment ? " - "+ev.pm.comment : "");
-              lbls.push(cShort(ev.pm.causeId));
-              if(ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
-          }
-          
-          ec.title = title;
-          var fs = lbls.length > 1 ? "10px" : "12px";
-          var ls = lbls.length > 1 ? "-0.5px" : "normal";
-          ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
-          if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
-      }
-    }else{
-      if(fe)ec.title="Jour férié";else if(va)ec.title="Vacances zone B"; else ec.title="";
+    if(!ST.events[baseKey]) {
+        ec.innerHTML = '';
+        ec.style.backgroundImage = '';
+        ec.style.backgroundColor = '';
+        if(fe)ec.title="Jour férié";else if(va)ec.title="Vacances zone B"; else ec.title="";
+    } else {
+        applyCellVisuals(ec, ST.events[baseKey]);
     }
 }
 
-// === RENDU PRINCIPAL ===
-function render(){
-  var activeElId = document.activeElement ? document.activeElement.id : null;
-  var selStart = document.activeElement ? document.activeElement.selectionStart : null;
-  
-  var gcElemBefore = document.querySelector(".gc");
-  var savedX = ST.lastScrollX || 0;
-  var savedY = ST.lastScrollY || 0;
-  if(gcElemBefore) {
-      savedX = gcElemBefore.scrollLeft;
-      savedY = gcElemBefore.scrollTop;
-      ST.lastScrollX = savedX;
-      ST.lastScrollY = savedY;
-  }
-
-  var app=document.getElementById("app");app.innerHTML="";
+// === RENDU PRINCIPAL & GESTION TOTALE SANS RECHARGEMENT ===
+function renderApp(){
+  var app=document.getElementById("app");
+  app.innerHTML="";
   
   var tb=document.createElement("div");tb.className="topbar";
   var syncCls="sync-dot "+(ST.loaded?"ok":"spin");
@@ -1073,37 +1075,27 @@ function render(){
   else ct.appendChild(rParametres());
   app.appendChild(ct);
   
-  if(ST.modal)app.appendChild(rModal());
-  if(ST.eModal)app.appendChild(rEModal());
-  if(ST.pModal)app.appendChild(rPModal());
-  if(ST.bModal)app.appendChild(rBilan());
-  if(ST.tutoModal)app.appendChild(rTutoModal());
-  
-  // RESTAURATION DU SCROLL SÉCURISÉE
-  var gcElemAfter = document.querySelector(".gc");
-  if(gcElemAfter && savedX !== undefined) {
-      ST.ignoreScroll = true; 
-      gcElemAfter.scrollLeft = savedX;
-      gcElemAfter.scrollTop = savedY;
-      requestAnimationFrame(function() {
-          var newGc = document.querySelector(".gc");
-          if(newGc) {
-              newGc.scrollLeft = savedX;
-              newGc.scrollTop = savedY;
-              setTimeout(function(){ ST.ignoreScroll = false; }, 100);
-          }
-      });
-  }
-  
-  bindAll();
+  // Appels Évènements Principaux (hors modales)
+  bindAppEvents();
+  renderModals();
+}
 
-  if(activeElId) {
-    var el = document.getElementById(activeElId);
-    if(el) {
-      el.focus();
-      if(selStart !== null && el.setSelectionRange) el.setSelectionRange(selStart, selStart);
+function renderModals() {
+    var mc = document.getElementById("modal-container");
+    if(!mc) {
+        mc = document.createElement("div");
+        mc.id = "modal-container";
+        document.body.appendChild(mc);
     }
-  }
+    mc.innerHTML = "";
+    
+    if(ST.modal) mc.appendChild(rModal());
+    if(ST.eModal) mc.appendChild(rEModal());
+    if(ST.pModal) mc.appendChild(rPModal());
+    if(ST.bModal) mc.appendChild(rBilan());
+    if(ST.tutoModal) mc.appendChild(rTutoModal());
+    
+    bindModalEvents();
 }
 
 function rPlanning(){
@@ -1263,43 +1255,9 @@ function buildGrid(){
           if(mon || d===1)cls2+=" ms";
           ec.className=cls2;
           
-          if(ev){
-            if(ev.type === 'full') {
-                var col = cColor(ev.causeId);
-                ec.style.backgroundColor = col;
-                ec.title = cLabel(ev.causeId)+(ev.comment?"\n"+ev.comment:"");
-                ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
-                if(ev.comment && ev.comment.trim() && ev.comment !== "Import Excel"){ ec.innerHTML += '<span class="ev-dot"></span>'; }
-            } else if (ev.type === 'half') {
-                var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
-                var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
-                ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
-                
-                var title = "";
-                var lbls = [];
-                var hasCmt = false;
-                
-                if(ev.am){
-                    title += cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment?" - "+ev.am.comment:"");
-                    lbls.push(cShort(ev.am.causeId));
-                    if(ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
-                }
-                if(ev.pm){
-                    if(title) title += "\n";
-                    title += cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment?" - "+ev.pm.comment:"");
-                    lbls.push(cShort(ev.pm.causeId));
-                    if(ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
-                }
-                
-                ec.title = title;
-                var fs = lbls.length > 1 ? "10px" : "12px";
-                var ls = lbls.length > 1 ? "-0.5px" : "normal";
-                ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
-                if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
-            }
-          }else{
-            if(fe)ec.title="Jour férié";else if(va)ec.title="Vacances zone B";
-          }
+          if(ev) applyCellVisuals(ec, ev);
+          else if(fe) ec.title="Jour férié"; else if(va) ec.title="Vacances zone B";
+          
           ec.setAttribute("data-pid",p.id);ec.setAttribute("data-day",d);ec.setAttribute("data-month",mo);ec.setAttribute("data-key",k);
           dr2.appendChild(ec);
         }
@@ -1317,29 +1275,20 @@ function rTutoModal() {
     html += '<div class="bm-body" style="padding:24px; font-size:14px; line-height:1.6; color:var(--tx1);">';
     
     html += '<h3 style="color:var(--primary); font-size:17px; margin-bottom:10px;">1️⃣ Poser une absence</h3>';
-    html += '<p>Sélectionnez un motif en haut (ex: <span class="legend-pill" style="background:#3B82F622; color:#3B82F6; padding:4px 10px; font-size:12px; border:1px solid #3B82F6;">CP (2)</span>), puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>. Cliquez sur une case vide pour la remplir.</p>';
-    html += '<p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Protection anti-erreur : Vous ne pouvez plus écraser accidentellement une case déjà remplie ! Il faut d\'abord l\'effacer.</p>';
+    html += '<p>Sélectionnez un motif en haut (ex: <span class="legend-pill" style="background:#3B82F622; color:#3B82F6; padding:4px 10px; font-size:12px; border:1px solid #3B82F6;">CP (2)</span>), puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>. Cliquez (clic gauche) sur une case vide pour la remplir.</p>';
+    html += '<p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Le clic gauche ne fonctionne QUE si un motif est sélectionné en haut. Sinon, il ne se passe rien !</p>';
 
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">2️⃣ Effacer avec la Gomme</h3>';
-    html += '<p>Cliquez sur le bouton <span class="legend-pill" style="background:#fce7f3; color:#db2777; padding:4px 10px; font-size:12px; border:1px solid #db2777;">🧽 Gomme</span> dans la barre du haut. Cliquez ensuite sur la case à effacer. (La gomme respecte le bouton sélectionné : elle effacera soit le Matin, soit l\'Aprem, soit tout le Jour).</p>';
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">2️⃣ Astreintes et Demi-journées</h3>';
+    html += '<p>L\'outil <b>ASTREINTE</b> est magique : même si vous êtes en "Journée entière", cliquer sur une case posera l\'Astreinte uniquement sur la moitié haute de la case ! La partie basse restera libre.</p>';
+    html += '<p>Vous pouvez ensuite sélectionner un autre motif (ex: CP), cliquer sur "Aprem", et cliquer sur la <b>même case</b>. Le CP se mettra en bas de la case.</p>';
 
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">3️⃣ Double Saisie (Matin + Aprem différé)</h3>';
-    html += '<p>Une même journée peut contenir deux motifs différents sans aucun problème !</p>';
-    html += '<div style="display:flex; align-items:center; gap:12px; margin-top:8px; background:var(--bg2); padding:12px; border-radius:8px;">';
-    html += '  <div style="flex:1;">';
-    html += '    <ol style="margin-left:20px; margin-bottom:0;">';
-    html += '      <li>Sélectionnez <span style="color:#E24B4A; font-weight:bold;">JRTT</span> et <b>Matin</b>, remplissez la case.</li>';
-    html += '      <li>Sélectionnez <span style="color:#3B82F6; font-weight:bold;">CP</span> et <b>Aprem</b>, cliquez sur la <b>même case</b>.</li>';
-    html += '    </ol>';
-    html += '  </div>';
-    html += '  <div style="text-align:center; padding-left:16px; border-left:2px dashed var(--bd2);">';
-    html += '    <div style="font-size:11px; color:var(--tx2); margin-bottom:4px;">Résultat</div>';
-    html += '    <div style="width:40px; height:40px; background:linear-gradient(to bottom right, #E24B4A 50%, #3B82F6 50%); border-radius:4px; box-shadow:0 2px 4px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:bold; letter-spacing:-0.5px; margin:0 auto;">1/2</div>';
-    html += '  </div>';
-    html += '</div>';
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">3️⃣ Effacer ou Remplacer une case</h3>';
+    html += '<p>Une case pleine <b>ne peut pas être écrasée</b> par erreur. Il faut obligatoirement :</p>';
+    html += '<ul><li>Soit utiliser la <span class="legend-pill" style="background:#fce7f3; color:#db2777; padding:4px 10px; font-size:12px; border:1px solid #db2777;">🧽 Gomme</span> en haut pour l\'effacer.</li>';
+    html += '<li>Soit faire un Clic Droit pour vider la case manuellement.</li></ul>';
 
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">4️⃣ Clic Droit : Détails & Commentaires</h3>';
-    html += '<p>Faites un <b>Clic Droit</b> sur n\'importe quelle case du planning pour ouvrir la fenêtre de détails. Vous pourrez y forcer les motifs et y ajouter des commentaires explicatifs.</p>';
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">4️⃣ Clic Droit = Détails & Commentaires</h3>';
+    html += '<p>Faites un <b>Clic Droit</b> sur n\'importe quelle case du planning pour ouvrir la fenêtre de détails. Vous pourrez forcer les motifs et taper une raison explicative.</p>';
     
     html += '<div style="background:var(--bg1); border:1px solid var(--bd2); border-radius:12px; padding:16px; margin-top:12px; box-shadow:0 8px 20px rgba(0,0,0,0.1); width:100%; max-width:400px; position:relative;">';
     html += '  <h4 style="margin-bottom:12px; font-size:15px;">DUPONT Jean <span style="font-size:11px; font-weight:normal; color:var(--tx2); float:right;">Jeu 15 Janvier 2026</span></h4>';
@@ -1407,8 +1356,8 @@ function rModal(){
   parts2.push('<div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">'+DL[dw]+' '+m2.day+' '+MO[m2.month]+' '+ST.year+' <span style="margin:0 8px">&mdash;</span> S'+p2(wk)+badge+'</div>');
   
   parts2.push('<div class="half-day-split">');
-  parts2.push('<div style="flex:1"><label>☀️ Matin</label><select id="mC_am" style="margin-bottom:8px;">'+makeOpts(amC)+'</select><input id="mCm_am" value="'+amCm+'" placeholder="Commentaire matin..."/></div>');
-  parts2.push('<div style="flex:1"><label>🌙 Après-midi</label><select id="mC_pm" style="margin-bottom:8px;">'+makeOpts(pmC)+'</select><input id="mCm_pm" value="'+pmCm+'" placeholder="Commentaire aprem..."/></div>');
+  parts2.push('<div style="flex:1"><label>☀️ Matin (ou Astreinte)</label><select id="mC_am" style="margin-bottom:8px;">'+makeOpts(amC)+'</select><input id="mCm_am" value="'+amCm+'" placeholder="Commentaire..."/></div>');
+  parts2.push('<div style="flex:1"><label>🌙 Après-midi</label><select id="mC_pm" style="margin-bottom:8px;">'+makeOpts(pmC)+'</select><input id="mCm_pm" value="'+pmCm+'" placeholder="Commentaire..."/></div>');
   parts2.push('</div>');
 
   parts2.push('<div class="mbtns">'+(ev?'<button class="btn d" id="dEv">Vider la case</button>':'')+'<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div>');
@@ -1672,18 +1621,12 @@ function rPersonnel(){
 function rParametres(){
   var div=document.createElement("div");div.className="tc";
   var sh=document.createElement("div");sh.className="sh";
-  sh.innerHTML='<h2>Causes d\'absence (Paramètres)</h2><button class="btn p" id="addC">+ Ajouter</button>';
+  sh.innerHTML='<h2>Paramétrages</h2><button class="btn p" id="addC">+ Ajouter une cause</button>';
   div.appendChild(sh);
   
   var pg=document.createElement("div");pg.className="pg";
   
-  // -- MODULE EXPORT GLOBAL EXCEL (.xlsx) --
-  var cExp=document.createElement("div");cExp.className="pc";cExp.style.gridColumn="1 / -1";
-  cExp.innerHTML=`<h3>📤 Exporter l'intégralité du planning (Excel .xlsx)</h3>
-  <p style="font-size:13px;color:var(--tx2);margin-bottom:16px;line-height:1.5;">Ce bouton permet de générer un véritable fichier Excel (.xlsx) contenant toutes les saisies de congés, demi-journées et commentaires actuels, formaté pour des analyses dans Excel.</p>
-  <button class="btn p" id="btnExportGlobalXlsx">Télécharger le Planning complet (.xlsx)</button>`;
-  pg.appendChild(cExp);
-
+  // -- CAUSES --
   var c1=document.createElement("div");c1.className="pc";
   c1.innerHTML="<h3>Causes configurées</h3>";
   for(var i=0;i<ST.causes.length;i++){
@@ -1693,22 +1636,42 @@ function rParametres(){
     pi.innerHTML='<div class="cdot" style="background:'+c.color+'"></div><span class="pil">'+c.label+'</span><span class="pn">'+c.id+'</span>';
     c1.appendChild(pi);
   }
+  c1.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Astuce: Créez une cause nommée "ASTREINTE" pour qu\'elle se comporte de façon spécifique (elle se positionne automatiquement sur la partie haute d\'une case) !</i></p>';
   pg.appendChild(c1);
   
+  // -- SERVICES --
   var c2=document.createElement("div");c2.className="pc";c2.innerHTML="<h3>Services disponibles</h3>";
   var svcList = document.createElement("div");
   svcList.style.display = "flex"; svcList.style.flexWrap = "wrap"; svcList.style.gap = "8px";
   for(var i=0;i<ST.services.length;i++){
-    svcList.innerHTML+='<span style="background:var(--bg2); border:1px solid var(--bd1); padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600;">'+ST.services[i]+'</span>';
+    svcList.innerHTML+='<span style="background:var(--bg2); border:1px solid var(--bd1); padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; display:flex; align-items:center;">'+ST.services[i]+'<button class="del-svc" data-svc="'+ST.services[i]+'" style="background:none;border:none;color:#E24B4A;cursor:pointer;margin-left:6px;font-size:14px;" title="Supprimer">&times;</button></span>';
   }
   c2.appendChild(svcList);
-  c2.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Pour ajouter un nouveau service ou groupe, tapez simplement son nom lors de la création ou modification d\'un employé. Il s\'ajoutera automatiquement ici !</i></p>';
+  c2.innerHTML+='<div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newSvc" placeholder="Nouveau service..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addSvcBtn" style="padding:6px 12px;">Ajouter</button></div>';
   pg.appendChild(c2);
   
-  // -- MODULE IMPORT EXCEL (.xlsx) --
+  // -- GROUPES --
+  var cGrp=document.createElement("div");cGrp.className="pc";cGrp.innerHTML="<h3>Groupes disponibles</h3>";
+  var grpList = document.createElement("div");
+  grpList.style.display = "flex"; grpList.style.flexWrap = "wrap"; grpList.style.gap = "8px";
+  for(var i=0;i<ST.groupes.length;i++){
+    grpList.innerHTML+='<span style="background:var(--bg2); border:1px solid var(--bd1); padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; display:flex; align-items:center;">'+ST.groupes[i]+'<button class="del-grp" data-grp="'+ST.groupes[i]+'" style="background:none;border:none;color:#E24B4A;cursor:pointer;margin-left:6px;font-size:14px;" title="Supprimer">&times;</button></span>';
+  }
+  cGrp.appendChild(grpList);
+  cGrp.innerHTML+='<div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newGrp" placeholder="Nouveau groupe..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addGrpBtn" style="padding:6px 12px;">Ajouter</button></div>';
+  pg.appendChild(cGrp);
+
+  // -- EXPORT EXCEL --
+  var cExp=document.createElement("div");cExp.className="pc";
+  cExp.innerHTML=`<h3>📤 Exporter l'intégralité (.xlsx)</h3>
+  <p style="font-size:13px;color:var(--tx2);margin-bottom:16px;line-height:1.5;">Générer un véritable fichier Excel contenant toutes les saisies et commentaires actuels de ${ST.year}.</p>
+  <button class="btn p" id="btnExportGlobalXlsx" style="width:100%;">Télécharger le Planning</button>`;
+  pg.appendChild(cExp);
+  
+  // -- IMPORT EXCEL --
   var c3=document.createElement("div");c3.className="pc";c3.style.gridColumn="1 / -1";
-  c3.innerHTML=`<h3>📥 Importer un fichier Excel (.xlsx) vers la base de données</h3>
-  <p style="font-size:12px;color:var(--tx2);margin-bottom:12px;line-height:1.5;">L'algorithme a été amélioré pour ignorer les colonnes de Totaux, lire à l'intérieur des cellules fusionnées et gérer les demi-journées. L'importation est blindée.</p>
+  c3.innerHTML=`<h3>📥 Importer un fichier Excel (.xlsx)</h3>
+  <p style="font-size:12px;color:var(--tx2);margin-bottom:12px;line-height:1.5;">L'importation écrase et crée les absences en "Journée entière" et récupère les commentaires (en réparant les accents). La détection du personnel est floue et résistante aux fautes de frappe.</p>
   <div style="display:flex;gap:10px;align-items:center">
     <input type="file" id="excelImportFile" accept=".xlsx, .xls" style="flex:1;padding:8px;border:1px dashed var(--bd2);border-radius:var(--r1);background:var(--bg2)">
     <button class="btn p" id="btnImportExcel" style="background:#F97316; border-color:#F97316;">Lancer l'import</button>
@@ -1719,13 +1682,13 @@ function rParametres(){
   div.appendChild(pg);return div;
 }
 
-// === EVENEMENTS & BINDING ===
-function bindAll(){
+// === EVENEMENTS APP PRINCIPALE ===
+function bindAppEvents(){
   var navTabs=document.querySelectorAll(".nav-tab");
   for(var i=0;i<navTabs.length;i++){(function(t){t.addEventListener("click",function(){
       if(t.id === "lockBtn" || t.id === "themeToggle") return; 
       if(t.hasAttribute("data-tab")) {
-          ST.tab=t.getAttribute("data-tab");render();
+          ST.tab=t.getAttribute("data-tab");renderApp();
       }
   });})(navTabs[i]);}
   
@@ -1736,13 +1699,13 @@ function bindAll(){
           var newTheme = currentTheme === 'dark' ? 'light' : 'dark';
           document.documentElement.setAttribute('data-theme', newTheme);
           localStorage.setItem('artt-theme', newTheme);
-          render(); 
+          renderApp(); 
       });
   }
 
   var pY=document.getElementById("pY"),nY=document.getElementById("nY");
-  if(pY)pY.addEventListener("click",function(){ST.year--;render();});
-  if(nY)nY.addEventListener("click",function(){ST.year++;render();});
+  if(pY)pY.addEventListener("click",function(){ST.year--;renderApp();});
+  if(nY)nY.addEventListener("click",function(){ST.year++;renderApp();});
   
   // -- Code Admin --
   var adminCode = document.getElementById("adminCode");
@@ -1750,7 +1713,7 @@ function bindAll(){
       adminCode.addEventListener("input", function(e) {
           if(e.target.value === "2214") {
               ST.isAdmin = true;
-              render();
+              renderApp();
           }
       });
   }
@@ -1759,11 +1722,11 @@ function bindAll(){
       lockBtn.addEventListener("click", function() {
           ST.isAdmin = false;
           if(ST.tab !== 'planning') ST.tab = 'planning';
-          render();
+          renderApp();
       });
   }
 
-  // Navigation Rapide des mois (Scroll vers l'axe X)
+  // ScrollSpy et Navigation Mois
   var mbs=document.querySelectorAll(".month-btn");
   for(var i=0;i<mbs.length;i++){(function(b){
       b.addEventListener("click",function(e){
@@ -1779,7 +1742,6 @@ function bindAll(){
       });
   })(mbs[i]);}
 
-  // ScrollSpy pour les mois (Mettre en surbrillance le mois visible)
   var gcElem = document.querySelector(".gc");
   if(gcElem && ST.tab === "planning") {
       gcElem.addEventListener("scroll", function() {
@@ -1804,42 +1766,28 @@ function bindAll(){
   }
   
   var fSvc=document.getElementById("fSvc"),fGrp=document.getElementById("fGrp"), fSearch=document.getElementById("fSearch");
-  if(fSvc)fSvc.addEventListener("change",function(){ST.fSvc=fSvc.value;render();});
-  if(fGrp)fGrp.addEventListener("change",function(){ST.fGrp=fGrp.value;render();});
-  if(fSearch)fSearch.addEventListener("input",function(e){ST.fSearch=e.target.value;render();});
+  if(fSvc)fSvc.addEventListener("change",function(){ST.fSvc=fSvc.value;renderApp();});
+  if(fGrp)fGrp.addEventListener("change",function(){ST.fGrp=fGrp.value;renderApp();});
+  if(fSearch)fSearch.addEventListener("input",function(e){ST.fSearch=e.target.value;renderApp();});
   
   var bS0=document.getElementById("bS0"),bS1=document.getElementById("bS1"),bM1=document.getElementById("bM1"),bAn=document.getElementById("bAn");
-  if(bS0)bS0.addEventListener("click",function(){ST.bModal={type:"semaine_courante"};render();});
-  if(bS1)bS1.addEventListener("click",function(){ST.bModal={type:"semaine"};render();});
-  if(bM1)bM1.addEventListener("click",function(){ST.bModal={type:"mois"};render();});
-  if(bAn)bAn.addEventListener("click",function(){ST.bModal={type:"conge"};render();});
+  if(bS0)bS0.addEventListener("click",function(){ST.bModal={type:"semaine_courante"};renderModals();});
+  if(bS1)bS1.addEventListener("click",function(){ST.bModal={type:"semaine"};renderModals();});
+  if(bM1)bM1.addEventListener("click",function(){ST.bModal={type:"mois"};renderModals();});
+  if(bAn)bAn.addEventListener("click",function(){ST.bModal={type:"conge"};renderModals();});
   
   var bpps=document.querySelectorAll(".btn-bp[data-bpp]");
   for(var i=0;i<bpps.length;i++){(function(btn){
       btn.addEventListener("click", function(){
           ST.bModal={type:"person", pid: parseInt(btn.getAttribute("data-bpp"))};
-          render();
+          renderModals();
       });
   })(bpps[i]);}
-
-  var bmFs=document.getElementById("bmFs"),bmFg=document.getElementById("bmFg"),bCsv=document.getElementById("bCsv");
-  if(bmFs)bmFs.addEventListener("change",function(){ST.bModal.fs=bmFs.value;render();});
-  if(bmFg)bmFg.addEventListener("change",function(){ST.bModal.fg=bmFg.value;render();});
-  if(bCsv)bCsv.addEventListener("click",function(){exportCSV(ST._currentCsvName, ST._currentCsv);});
   
-  var clBm=document.getElementById("clBm"),bmOv=document.getElementById("bmOv");
-  if(clBm)clBm.addEventListener("click",function(){ST.bModal=null;render();});
-  if(bmOv)bmOv.addEventListener("click",function(e){if(e.target===bmOv){ST.bModal=null;render();}});
-  
-  // Tuto Modale events
   var bHelp = document.getElementById("bHelp");
-  if(bHelp)bHelp.addEventListener("click",function(){ST.tutoModal=true;render();});
-  var clTuto = document.getElementById("clTuto"), tutoOv = document.getElementById("tutoOv"), btnGotIt = document.getElementById("btnGotIt");
-  if(clTuto)clTuto.addEventListener("click",function(){ST.tutoModal=false;render();});
-  if(btnGotIt)btnGotIt.addEventListener("click",function(){ST.tutoModal=false;render();});
-  if(tutoOv)tutoOv.addEventListener("click",function(e){if(e.target===tutoOv){ST.tutoModal=false;render();}});
+  if(bHelp)bHelp.addEventListener("click",function(){ST.tutoModal=true;renderModals();});
 
-  // -- MODE PINCEAU (Avec gestion de la Gomme) --
+  // -- MODE PINCEAU --
   var pills = document.querySelectorAll(".legend-pill[data-cause]");
   for(var i=0;i<pills.length;i++){
      pills[i].addEventListener("click", function(e) {
@@ -1868,7 +1816,7 @@ function bindAll(){
      });
   }
 
-  // Clics sur les cases du planning (Saisie et Gomme Anti-écrasement)
+  // CLICS SUR LA GRILLE (Saisie Rapide Uniquement)
   var ecs=document.querySelectorAll(".ec[data-pid]");
   for(var i=0;i<ecs.length;i++){(function(ec){
     ec.addEventListener("click",function(e){
@@ -1877,8 +1825,8 @@ function bindAll(){
       var mo=parseInt(ec.getAttribute("data-month"));
       var baseKey=ec.getAttribute("data-key");
       
-      if(pid&&day){
-          if(ST.selectedCauseId) {
+      // LE CLIC GAUCHE NE FAIT QUELQUE CHOSE QUE SI UN OUTIL EST SELECTIONNÉ
+      if(pid && day && ST.selectedCauseId) {
              var existing = ST.events[baseKey];
              var upserts = [];
              var deletes = [];
@@ -1912,31 +1860,38 @@ function bindAll(){
                      }
                  }
              } else {
-                 // AJOUT / SAISIE NORMAL (Avec blocage anti-écrasement)
+                 // LOGIQUE ASTREINTE : Force sur "Matin" (am) pour libérer le bas
+                 var targetPeriod = ST.selectedPeriod;
+                 var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
+                 if(causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1 && targetPeriod === 'full') {
+                     targetPeriod = 'am'; 
+                 }
+                 
+                 // SAISIE NORMALE (Avec blocage anti-écrasement)
                  var conflict = false;
-                 if (ST.selectedPeriod === 'full') {
+                 if (targetPeriod === 'full') {
                      if (existing) conflict = true;
-                 } else if (ST.selectedPeriod === 'am') {
+                 } else if (targetPeriod === 'am') {
                      if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
-                 } else if (ST.selectedPeriod === 'pm') {
+                 } else if (targetPeriod === 'pm') {
                      if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
                  }
 
                  if (conflict) {
-                     showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer.", true);
-                     return; // On annule l'action
+                     showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
+                     return; 
                  }
 
-                 if (ST.selectedPeriod === 'full') {
+                 if (targetPeriod === 'full') {
                      ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
                      upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
                      deletes.push(baseKey+'-am', baseKey+'-pm');
-                 } else if (ST.selectedPeriod === 'am') {
+                 } else if (targetPeriod === 'am') {
                      if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
                      ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
                      upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
                      if(existing && existing.pm) deletes.push(baseKey);
-                 } else if (ST.selectedPeriod === 'pm') {
+                 } else if (targetPeriod === 'pm') {
                      if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
                      ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
                      upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
@@ -1948,36 +1903,122 @@ function bindAll(){
              if(upserts.length > 0 || deletes.length > 0) {
                  saveEvsDB(upserts, deletes);
              }
-             
-          } else {
-             // Modification demandée : Aucun outil sélectionné -> le clic gauche ne fait rien !
-             // On supprime l'ouverture de la modale ici.
-          }
       }
     });
     
-    // Clic Droit = Forcer ouverture Modale
+    // CLIC DROIT = FORCER MODALE DE DETAILS
     ec.addEventListener("contextmenu", function(e) {
         e.preventDefault();
         var pid=parseInt(ec.getAttribute("data-pid"));
         var day=parseInt(ec.getAttribute("data-day"));
         var mo=parseInt(ec.getAttribute("data-month"));
         var key=ec.getAttribute("data-key");
-        if(pid&&day){ST.modal={pid:pid,day:day,month:mo,key:key};render();}
+        if(pid&&day){ST.modal={pid:pid,day:day,month:mo,key:key};renderModals();}
     });
   })(ecs[i]);}
   
+  // Boutons Personnel
+  var addP=document.getElementById("addP");
+  if(addP)addP.addEventListener("click",function(){ST.eModal={};renderModals();});
+  var epBtns=document.querySelectorAll("[data-ep]");
+  for(var i=0;i<epBtns.length;i++){(function(b){b.addEventListener("click",function(){ST.eModal={pid:parseInt(b.getAttribute("data-ep"))};renderModals();});})(epBtns[i]);}
+  
+  // Boutons Paramètres (Causes)
+  var addC=document.getElementById("addC");
+  if(addC)addC.addEventListener("click",function(){ST.pModal={};renderModals();});
+  var ecBtns=document.querySelectorAll("[data-ec]");
+  for(var i=0;i<ecBtns.length;i++){(function(el){el.addEventListener("click",function(){
+    var id=parseInt(el.getAttribute("data-ec"));
+    for(var j=0;j<ST.causes.length;j++){if(ST.causes[j].id===id){ST.pModal=Object.assign({},ST.causes[j]);renderModals();break;}}
+  });})(ecBtns[i]);}
+
+  // Boutons Paramètres (Services)
+  var addSvcBtn=document.getElementById("addSvcBtn");
+  if(addSvcBtn) addSvcBtn.addEventListener("click", function(){
+      var val=document.getElementById("newSvc").value.trim();
+      if(val && ST.services.indexOf(val)===-1){ ST.services.push(val); ST.services.sort(); saveConfig(); renderApp(); }
+  });
+  var delSvcBtns=document.querySelectorAll(".del-svc");
+  for(var i=0;i<delSvcBtns.length;i++){(function(b){b.addEventListener("click",function(e){
+      var v = e.currentTarget.getAttribute("data-svc");
+      ST.services = ST.services.filter(function(s){return s!==v;}); saveConfig(); renderApp();
+  });})(delSvcBtns[i]);}
+  
+  // Boutons Paramètres (Groupes)
+  var addGrpBtn=document.getElementById("addGrpBtn");
+  if(addGrpBtn) addGrpBtn.addEventListener("click", function(){
+      var val=document.getElementById("newGrp").value.trim();
+      if(val && ST.groupes.indexOf(val)===-1){ ST.groupes.push(val); ST.groupes.sort(); saveConfig(); renderApp(); }
+  });
+  var delGrpBtns=document.querySelectorAll(".del-grp");
+  for(var i=0;i<delGrpBtns.length;i++){(function(b){b.addEventListener("click",function(e){
+      var v = e.currentTarget.getAttribute("data-grp");
+      ST.groupes = ST.groupes.filter(function(g){return g!==v;}); saveConfig(); renderApp();
+  });})(delGrpBtns[i]);}
+
+  // EXPORT EXCEL GLOBAL
+  var btnExportGlobalXlsx = document.getElementById("btnExportGlobalXlsx");
+  if(btnExportGlobalXlsx) {
+      btnExportGlobalXlsx.addEventListener("click", function() {
+          if(typeof XLSX === 'undefined') { showToast("Veuillez patienter, chargement de l'outil d'export...", true); return; }
+          var data = [["Date", "Employé", "Service", "Groupe", "Cause", "Période", "Commentaire"]];
+          var keys = Object.keys(ST.events);
+          keys.sort(function(a,b) {
+              var pA = a.split('-'), pB = b.split('-');
+              var dtA = new Date(pA[1], pA[2], pA[3]).getTime(), dtB = new Date(pB[1], pB[2], pB[3]).getTime();
+              return dtA - dtB;
+          });
+          for(var i=0; i<keys.length; i++) {
+              var k = keys[i];
+              if(k === "__personnels__") continue;
+              var ev = ST.events[k], parts = k.split('-'); 
+              if(parts.length < 4) continue;
+              var pid = parseInt(parts[0]);
+              var p = ST.personnels.find(function(x){ return x.id === pid; });
+              if(!p) continue;
+              var dateStr = p2(parts[3]) + "/" + p2(parseInt(parts[2])+1) + "/" + parts[1];
+              if(ev.type === 'full') {
+                  data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.causeId), 'Jour entier', ev.comment==="Import Excel"?"":ev.comment||""]);
+              } else if(ev.type === 'half') {
+                  if(ev.am) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.am.causeId), 'Matin', ev.am.comment==="Import Excel"?"":ev.am.comment||""]);
+                  if(ev.pm) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.pm.causeId), 'Après-midi', ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]);
+              }
+          }
+          var ws = XLSX.utils.aoa_to_sheet(data);
+          var wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Absences");
+          XLSX.writeFile(wb, "Planning_Absences_Usine_" + ST.year + ".xlsx");
+          showToast("Export XLSX réussi");
+      });
+  }
+
+  // IMPORT EXCEL
+  var btnImportExcel = document.getElementById("btnImportExcel");
+  var excelImportFile = document.getElementById("excelImportFile");
+  if(btnImportExcel && excelImportFile) {
+      btnImportExcel.addEventListener("click", function() {
+          if(!excelImportFile.files || !excelImportFile.files[0]) { showToast("Veuillez sélectionner un fichier Excel", true); return; }
+          var file = excelImportFile.files[0];
+          var reader = new FileReader();
+          reader.onload = function(e) { processExcelImport(e.target.result); };
+          reader.readAsArrayBuffer(file);
+      });
+  }
+}
+
+// === EVENEMENTS DES MODALES (Séparé pour ne pas casser le scroll) ===
+function bindModalEvents() {
   var mOv=document.getElementById("mOv"),cMod=document.getElementById("cMod"),sMod=document.getElementById("sMod"),dEvBtn=document.getElementById("dEv");
-  if(mOv)mOv.addEventListener("click",function(e){if(e.target===mOv){ST.modal=null;render();}});
-  if(cMod)cMod.addEventListener("click",function(){ST.modal=null;render();});
+  if(mOv)mOv.addEventListener("click",function(e){if(e.target===mOv){ST.modal=null;renderModals();}});
+  if(cMod)cMod.addEventListener("click",function(){ST.modal=null;renderModals();});
+  
   if(dEvBtn)dEvBtn.addEventListener("click",function(){
-    var key=ST.modal.key;
-    delete ST.events[key];
-    ST.modal=null; render();
+    var key=ST.modal.key; delete ST.events[key]; ST.modal=null; renderModals();
+    var ec = document.querySelector('.ec[data-key="'+key+'"]');
+    if(ec) updateCellVisual(ec, key, ST.year, ec.getAttribute('data-month'), ec.getAttribute('data-day'));
     saveEvsDB([], [key, key+'-am', key+'-pm']).then(function(){showToast("Absence supprimée");});
   });
   
-  // MODALE ENREGISTRER
   if(sMod)sMod.addEventListener("click",function(){
     var cid_am = parseInt(document.getElementById("mC_am").value) || null;
     var cm_am = document.getElementById("mCm_am").value.trim();
@@ -1993,47 +2034,29 @@ function bindAll(){
     } else if (cid_am || cid_pm) {
         ST.events[key] = {type:'half', am:null, pm:null};
         deletes.push(key); 
-        if (cid_am) {
-            ST.events[key].am = {causeId:cid_am, comment:cm_am};
-            upserts.push({id:key+'-am', cause_id:cid_am, comment:cm_am});
-        } else {
-            deletes.push(key+'-am');
-        }
-        if (cid_pm) {
-            ST.events[key].pm = {causeId:cid_pm, comment:cm_pm};
-            upserts.push({id:key+'-pm', cause_id:cid_pm, comment:cm_pm});
-        } else {
-            deletes.push(key+'-pm');
-        }
+        if (cid_am) { ST.events[key].am = {causeId:cid_am, comment:cm_am}; upserts.push({id:key+'-am', cause_id:cid_am, comment:cm_am}); } else { deletes.push(key+'-am'); }
+        if (cid_pm) { ST.events[key].pm = {causeId:cid_pm, comment:cm_pm}; upserts.push({id:key+'-pm', cause_id:cid_pm, comment:cm_pm}); } else { deletes.push(key+'-pm'); }
     } else {
         delete ST.events[key];
         deletes.push(key, key+'-am', key+'-pm');
     }
-    
-    ST.modal=null; render();
+    ST.modal=null; renderModals();
+    var ec = document.querySelector('.ec[data-key="'+key+'"]');
+    if(ec) updateCellVisual(ec, key, ST.year, ec.getAttribute('data-month'), ec.getAttribute('data-day'));
     saveEvsDB(upserts, deletes).then(function(){showToast("Absence enregistrée");});
   });
   
-  var addP=document.getElementById("addP");
-  if(addP)addP.addEventListener("click",function(){ST.eModal={};render();});
-  var epBtns=document.querySelectorAll("[data-ep]");
-  for(var i=0;i<epBtns.length;i++){(function(b){b.addEventListener("click",function(){ST.eModal={pid:parseInt(b.getAttribute("data-ep"))};render();});})(epBtns[i]);}
   var cEd=document.getElementById("cEd"),sEd=document.getElementById("sEd"),dPer=document.getElementById("dPer");
-  if(cEd)cEd.addEventListener("click",function(){ST.eModal=null;render();});
-  
+  if(cEd)cEd.addEventListener("click",function(){ST.eModal=null;renderModals();});
   if(dPer)dPer.addEventListener("click",function(){
-    var pid=ST.eModal.pid;
-    ST.personnels=ST.personnels.filter(function(p){return p.id!==pid;});
-    ST.eModal=null;render();
-    saveConfig();
+    var pid=ST.eModal.pid; ST.personnels=ST.personnels.filter(function(p){return p.id!==pid;});
+    ST.eModal=null; saveConfig(); renderApp();
   });
-  
   if(sEd)sEd.addEventListener("click",function(){
     var nom=document.getElementById("eNom").value;
     var svc=document.getElementById("eSvc").value.trim();
     var grp=document.getElementById("eGrp").value.trim();
     if(!nom)return;
-    
     if(svc && ST.services.indexOf(svc) === -1) ST.services.push(svc);
     if(grp && ST.groupes.indexOf(grp) === -1) ST.groupes.push(grp);
     
@@ -2042,27 +2065,15 @@ function bindAll(){
     }else{
       ST.personnels.push({id:Date.now(),nom:nom,service:svc,groupe:grp});
     }
-    ST.eModal=null;render();
-    saveConfig();
+    ST.eModal=null; saveConfig(); renderApp();
   });
   
-  var addC=document.getElementById("addC");
-  if(addC)addC.addEventListener("click",function(){ST.pModal={};render();});
-  var ecBtns=document.querySelectorAll("[data-ec]");
-  for(var i=0;i<ecBtns.length;i++){(function(el){el.addEventListener("click",function(){
-    var id=parseInt(el.getAttribute("data-ec"));
-    for(var j=0;j<ST.causes.length;j++){if(ST.causes[j].id===id){ST.pModal=Object.assign({},ST.causes[j]);render();break;}}
-  });})(ecBtns[i]);}
   var cPar=document.getElementById("cPar"),sPar=document.getElementById("sPar"),dPar=document.getElementById("dPar");
-  if(cPar)cPar.addEventListener("click",function(){ST.pModal=null;render();});
-  
+  if(cPar)cPar.addEventListener("click",function(){ST.pModal=null;renderModals();});
   if(dPar)dPar.addEventListener("click",function(){
-    var id=ST.pModal.id;
-    ST.causes=ST.causes.filter(function(c){return c.id!==id;});
-    ST.pModal=null;render();
-    saveConfig();
+    var id=ST.pModal.id; ST.causes=ST.causes.filter(function(c){return c.id!==id;});
+    ST.pModal=null; saveConfig(); renderApp();
   });
-  
   if(sPar)sPar.addEventListener("click",function(){
     var lbl=document.getElementById("pLbl").value;
     var col=document.getElementById("pCol").value;
@@ -2075,79 +2086,26 @@ function bindAll(){
       for(var i=0;i<ST.causes.length;i++){ if(ST.causes[i].id>maxId) maxId=ST.causes[i].id; }
       ST.causes.push({id:maxId+1,label:lbl,color:col,short:sh||String(maxId+1)});
     }
-    ST.pModal=null;render();
-    saveConfig();
+    ST.pModal=null; saveConfig(); renderApp();
   });
-
-  // EXPORT EXCEL GLOBAL (.xlsx)
-  var btnExportGlobalXlsx = document.getElementById("btnExportGlobalXlsx");
-  if(btnExportGlobalXlsx) {
-      btnExportGlobalXlsx.addEventListener("click", function() {
-          if(typeof XLSX === 'undefined') { showToast("Veuillez patienter, chargement de l'outil d'export...", true); return; }
-          
-          var data = [["Date", "Employé", "Service", "Groupe", "Cause", "Période", "Commentaire"]];
-          
-          var keys = Object.keys(ST.events);
-          keys.sort(function(a,b) {
-              var pA = a.split('-');
-              var pB = b.split('-');
-              var dtA = new Date(pA[1], pA[2], pA[3]).getTime();
-              var dtB = new Date(pB[1], pB[2], pB[3]).getTime();
-              return dtA - dtB;
-          });
-          
-          for(var i=0; i<keys.length; i++) {
-              var k = keys[i];
-              if(k === "__personnels__") continue;
-              
-              var ev = ST.events[k];
-              var parts = k.split('-'); 
-              if(parts.length < 4) continue;
-              
-              var pid = parseInt(parts[0]);
-              var p = ST.personnels.find(function(x){ return x.id === pid; });
-              if(!p) continue;
-              
-              var dateStr = p2(parts[3]) + "/" + p2(parseInt(parts[2])+1) + "/" + parts[1];
-              
-              if(ev.type === 'full') {
-                  data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.causeId), 'Jour entier', ev.comment==="Import Excel"?"":ev.comment||""]);
-              } else if(ev.type === 'half') {
-                  if(ev.am) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.am.causeId), 'Matin', ev.am.comment==="Import Excel"?"":ev.am.comment||""]);
-                  if(ev.pm) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.pm.causeId), 'Après-midi', ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]);
-              }
-          }
-          
-          var ws = XLSX.utils.aoa_to_sheet(data);
-          var wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Absences");
-          XLSX.writeFile(wb, "Planning_Absences_Usine_" + ST.year + ".xlsx");
-          showToast("Export XLSX réussi");
-      });
-  }
-
-  // IMPORT EXCEL
-  var btnImportExcel = document.getElementById("btnImportExcel");
-  var excelImportFile = document.getElementById("excelImportFile");
-  if(btnImportExcel && excelImportFile) {
-      btnImportExcel.addEventListener("click", function() {
-          if(!excelImportFile.files || !excelImportFile.files[0]) {
-              showToast("Veuillez sélectionner un fichier Excel (.xlsx ou .xls)", true);
-              return;
-          }
-          var file = excelImportFile.files[0];
-          var reader = new FileReader();
-          reader.onload = function(e) {
-              processExcelImport(e.target.result);
-          };
-          reader.readAsArrayBuffer(file);
-      });
-  }
+  
+  var bmFs=document.getElementById("bmFs"),bmFg=document.getElementById("bmFg"),bCsv=document.getElementById("bCsv");
+  if(bmFs)bmFs.addEventListener("change",function(){ST.bModal.fs=bmFs.value;renderModals();});
+  if(bmFg)bmFg.addEventListener("change",function(){ST.bModal.fg=bmFg.value;renderModals();});
+  if(bCsv)bCsv.addEventListener("click",function(){exportCSV(ST._currentCsvName, ST._currentCsv);});
+  var clBm=document.getElementById("clBm"),bmOv=document.getElementById("bmOv");
+  if(clBm)clBm.addEventListener("click",function(){ST.bModal=null;renderModals();});
+  if(bmOv)bmOv.addEventListener("click",function(e){if(e.target===bmOv){ST.bModal=null;renderModals();}});
+  
+  var clTuto = document.getElementById("clTuto"), tutoOv = document.getElementById("tutoOv"), btnGotIt = document.getElementById("btnGotIt");
+  if(clTuto)clTuto.addEventListener("click",function(){ST.tutoModal=false;renderModals();});
+  if(btnGotIt)btnGotIt.addEventListener("click",function(){ST.tutoModal=false;renderModals();});
+  if(tutoOv)tutoOv.addEventListener("click",function(e){if(e.target===tutoOv){ST.tutoModal=false;renderModals();}});
 }
 
 // === DEMARRAGE ET SYNCHRONISATION OPTIMISÉE ===
 if(checkGasUrl()) {
-    render();
+    renderApp();
 
     loadDB().then(function(res){
       if(res){
@@ -2158,13 +2116,13 @@ if(checkGasUrl()) {
         if(res.groupes && res.groupes.length > 0){ ST.groupes = res.groupes; }
       }
       ST.loaded = true;
-      render();
+      renderApp();
       setTimeout(scrollTd, 300);
       showToast("Planning synchronisé");
     }).catch(function(e){
       console.error("Google Sheets Error:",e);
       ST.loaded = true;
-      render();
+      renderApp();
       setTimeout(scrollTd, 300);
       showToast("Mode hors ligne ou Erreur URL", true);
     });
@@ -2197,14 +2155,14 @@ if(checkGasUrl()) {
               ST.groupes = tempGrp;
               
               if(ST.tab === "planning" && !ST.modal && !ST.bModal && !ST.tutoModal) {
-                  render();
+                  renderApp();
               }
           }
         }
       });
     }, 60000);
 } else {
-    render();
+    renderApp();
 }
 
 </script>
