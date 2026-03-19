@@ -131,8 +131,8 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 
 /* === CALENDRIER PERSONNEL === */
 .cal-wrapper { flex:1; overflow:auto; background:var(--bg3); padding:8px 16px; scroll-behavior: smooth; min-height:0; }
-.cal-grid { display:flex; gap:8px; min-width:1000px; width:100%; height:100%; padding-bottom:8px; }
-.cal-col { flex:1; min-width:80px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; height:100%; }
+.cal-grid { display:flex; gap:8px; min-width:max-content; height:100%; padding-bottom:8px; }
+.cal-col { width:130px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; height:100%; }
 .cal-month-name { background:var(--bg2); color:var(--primary); text-align:center; padding:6px 0; font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:1px; position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd2); flex-shrink:0; }
 .cal-row { display:flex; border-bottom:1px solid var(--bd2); flex:1; min-height:16px; box-sizing:border-box; overflow:hidden; }
 .cal-row.empty { background:var(--bg2); border-bottom:none; flex:1; min-height:16px; }
@@ -835,12 +835,17 @@ var ST={
   modal:null,
   eModal:null,
   pModal:null,
+  svcModal:null,
+  grpModal:null,
   bModal:null,
   tutoModal:false,
   isAdmin:false,
   loaded:false,
-  lastScrollX: 0,
-  lastScrollY: 0,
+  scrollPlanX: 0,
+  scrollPlanY: 0,
+  scrollCalX: 0,
+  scrollCalY: 0,
+  initialScrollDone: false,
   ignoreScroll: false,
   events: JSON.parse(JSON.stringify(XLS)),
   causes:CD.map(function(c){return {id:c.id,label:c.label,color:c.color,short:c.short};}),
@@ -1038,14 +1043,13 @@ function scrollTd(){
   var gc=document.querySelector(".gc");
   var todayEl=document.querySelector(".ec.td");
   if(gc && todayEl){
-    ST.ignoreScroll = true;
     var nameWidth = getNameColWidth();
     var offset = todayEl.offsetLeft - nameWidth - (gc.clientWidth / 2) + 14;
-    gc.scrollTo({left: Math.max(0, offset), behavior: 'smooth'});
-    setTimeout(function(){ 
-        if(document.querySelector(".gc")) ST.lastScrollX = document.querySelector(".gc").scrollLeft;
-        ST.ignoreScroll = false; 
-    }, 600);
+    gc.style.scrollBehavior = 'auto'; // instant jump
+    gc.scrollLeft = Math.max(0, offset);
+    ST.scrollPlanX = gc.scrollLeft;
+    ST.scrollPlanY = gc.scrollTop;
+    gc.style.scrollBehavior = 'smooth';
   }
 }
 
@@ -1083,46 +1087,32 @@ function applyCellVisuals(ec, ev) {
         ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
         if(ev.comment && ev.comment.trim() && ev.comment!=="Import Excel"){ ec.innerHTML += '<span class="ev-dot"></span>'; }
     } else if (ev.type === 'half') {
-        var amIsAst = ev.am && cLabel(ev.am.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
-        var pmIsAst = ev.pm && cLabel(ev.pm.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
-        var isHoriz = amIsAst || pmIsAst;
-        
         var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
         var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
         
-        if (isHoriz) {
-            ec.style.backgroundImage = 'linear-gradient(to bottom, '+amCol+' 50%, '+pmCol+' 50%)';
-        } else {
-            ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
-        }
+        ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
         
         var title = "";
         var hasCmt = false;
         
         if(ev.am){
-            title += cLabel(ev.am.causeId) + (isHoriz && amIsAst ? "" : " (Matin)") + (ev.am.comment ? " - "+ev.am.comment : "");
+            title += cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment ? " - "+ev.am.comment : "");
             if(ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
         }
         if(ev.pm){
             if(title) title += "\n";
-            title += cLabel(ev.pm.causeId) + (isHoriz && pmIsAst ? "" : " (Aprem)") + (ev.pm.comment ? " - "+ev.pm.comment : "");
+            title += cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment ? " - "+ev.pm.comment : "");
             if(ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
         }
         
         ec.title = title;
         
-        if (isHoriz) {
-            var topLbl = ev.am ? cShort(ev.am.causeId) : '';
-            var botLbl = ev.pm ? cShort(ev.pm.causeId) : '';
-            ec.innerHTML = '<div style="display:flex; flex-direction:column; height:100%; width:100%; justify-content:space-evenly; align-items:center; font-size:10px; font-weight:900; color:white; text-shadow:0 1px 2px rgba(0,0,0,0.8); line-height:1; z-index:2;"><span>'+topLbl+'</span><span>'+botLbl+'</span></div>';
-        } else {
-            var lbls = [];
-            if(ev.am) lbls.push(cShort(ev.am.causeId));
-            if(ev.pm) lbls.push(cShort(ev.pm.causeId));
-            var fs = lbls.length > 1 ? "10px" : "12px";
-            var ls = lbls.length > 1 ? "-0.5px" : "normal";
-            ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
-        }
+        var lbls = [];
+        if(ev.am) lbls.push(cShort(ev.am.causeId));
+        if(ev.pm) lbls.push(cShort(ev.pm.causeId));
+        var fs = lbls.length > 1 ? "10px" : "12px";
+        var ls = lbls.length > 1 ? "-0.5px" : "normal";
+        ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
         if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
     }
 }
@@ -1150,16 +1140,7 @@ function renderApp(){
   var activeElId = document.activeElement ? document.activeElement.id : null;
   var selStart = document.activeElement ? document.activeElement.selectionStart : null;
   
-  var gcElemBefore = document.querySelector(".gc") || document.querySelector(".cal-wrapper");
-  var savedX = ST.lastScrollX || 0;
-  var savedY = ST.lastScrollY || 0;
-  if(gcElemBefore) {
-      savedX = gcElemBefore.scrollLeft;
-      savedY = gcElemBefore.scrollTop;
-      ST.lastScrollX = savedX;
-      ST.lastScrollY = savedY;
-      ST.ignoreScroll = true; // Lock scroll updates BEFORE destroying DOM
-  }
+  ST.ignoreScroll = true; // Lock scroll updates BEFORE destroying DOM
 
   var app=document.getElementById("app");
   app.innerHTML="";
@@ -1221,18 +1202,30 @@ function renderApp(){
   renderModals();
 
   // RESTAURATION DU SCROLL ABSOLUMENT SÉCURISÉE
-  var gcElemAfter = document.querySelector(".gc") || document.querySelector(".cal-wrapper");
-  if(gcElemAfter && savedX !== undefined) {
-      // Force un reflow synchrone pour appliquer le scroll instantanément
-      void gcElemAfter.offsetHeight; 
-      gcElemAfter.scrollLeft = savedX;
-      gcElemAfter.scrollTop = savedY;
+  var gcElemAfter = document.querySelector(".gc");
+  var calElemAfter = document.querySelector(".cal-wrapper");
+  var targetElem = gcElemAfter || calElemAfter;
+
+  if(targetElem) {
+      var savedX = ST.tab === 'planning' ? ST.scrollPlanX : ST.scrollCalX;
+      var savedY = ST.tab === 'planning' ? ST.scrollPlanY : ST.scrollCalY;
+
+      targetElem.style.scrollBehavior = 'auto'; // Disable smooth scroll for instant restore
+      void targetElem.offsetHeight; // Force reflow
+      targetElem.scrollLeft = savedX;
+      targetElem.scrollTop = savedY;
       
       requestAnimationFrame(function() {
-          var newGc = document.querySelector(".gc") || document.querySelector(".cal-wrapper");
-          if(newGc) {
-              newGc.scrollLeft = savedX;
-              newGc.scrollTop = savedY;
+          if(targetElem) {
+              targetElem.scrollLeft = savedX;
+              targetElem.scrollTop = savedY;
+              targetElem.style.scrollBehavior = 'smooth';
+              
+              // Update month highlight correctly for planning
+              if(ST.tab === 'planning') {
+                  updateMonthHighlight(savedX);
+              }
+              
               setTimeout(function(){ ST.ignoreScroll = false; }, 50);
           } else {
               ST.ignoreScroll = false;
@@ -1251,6 +1244,21 @@ function renderApp(){
   }
 }
 
+function updateMonthHighlight(sl) {
+    var activeM = 0;
+    for(var m=11; m>=0; m--) {
+        var el = document.getElementById("m-start-" + m);
+        if(el && (el.offsetLeft - getNameColWidth()) <= sl + 150) { 
+            activeM = m;
+            break;
+        }
+    }
+    document.querySelectorAll(".month-btn").forEach(function(b) {
+        if(parseInt(b.getAttribute("data-month")) === activeM) b.classList.add("active");
+        else b.classList.remove("active");
+    });
+}
+
 function renderModals() {
     var mc = document.getElementById("modal-container");
     if(!mc) {
@@ -1263,6 +1271,8 @@ function renderModals() {
     if(ST.modal) mc.appendChild(rModal());
     if(ST.eModal) mc.appendChild(rEModal());
     if(ST.pModal) mc.appendChild(rPModal());
+    if(ST.svcModal) mc.appendChild(rSvcModal());
+    if(ST.grpModal) mc.appendChild(rGrpModal());
     if(ST.bModal) mc.appendChild(rBilan());
     if(ST.tutoModal) mc.appendChild(rTutoModal());
     
@@ -1534,7 +1544,7 @@ function rTutoModal() {
     html += '    </ol>';
     html += '  </div>';
     html += '  <div style="text-align:center; padding-left:16px; border-left:2px dashed var(--bd2);">';
-    html += '    <div style="font-size:11px; color:var(--tx2); margin-bottom:4px;">Résultat</div>';
+    html += '    <div style="font-size:11px; color:var(--tx2); margin-bottom:4px;">Résultat (Diagonale)</div>';
     html += '    <div style="width:40px; height:40px; background:linear-gradient(to bottom right, #E24B4A 50%, #3B82F6 50%); border-radius:4px; box-shadow:0 2px 4px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:bold; letter-spacing:-0.5px; margin:0 auto;">1/2</div>';
     html += '  </div>';
     html += '</div>';
@@ -1575,7 +1585,7 @@ function rModal(){
   var ov=document.createElement('div');ov.className='ov';ov.id='mOv';
   var m=document.createElement('div');m.className='modal';
   
-  var p=ST.personnels.find(function(x){return x.id===m2.pid;});
+  var p=ST.personnels.find(function(x){return String(x.id)===String(m2.pid);});
   var ev=ST.events[m2.key];
   var dw=dow(ST.year,m2.month,m2.day),wk=isoWk(ST.year,m2.month,m2.day);
   var fe=isFe(ST.year,m2.month,m2.day),va=isVa(ST.year,m2.month,m2.day),we=isWe(ST.year,m2.month,m2.day);
@@ -1652,11 +1662,11 @@ function rBilan(){
     badge="Mois analysé : "+MO[pm.month]+" "+pm.year;
     evs=evRange(pm.year,pm.month,1,pm.year,pm.month,dim(pm.year,pm.month),fs,fg);
   }else if(bm.type==="person"){
-    var prs=ST.personnels.find(function(x){return x.id===bm.pid;});
+    var prs=ST.personnels.find(function(x){return String(x.id)===String(bm.pid);});
     title="Bilan individuel de l'année — " + prs.nom;
     badge=prs.service + " | " + prs.groupe;
     evs=evRange(ST.year,0,1,ST.year,11,31,"","");
-    evs=evs.filter(function(e){return e.person.id === prs.id;});
+    evs=evs.filter(function(e){return String(e.person.id) === String(prs.id);});
   }
   
   var tot=evs.length,uniq=0,seen={};
@@ -1806,7 +1816,7 @@ function rBilan(){
 
 function rEModal(){
   var em=ST.eModal,p=null;
-  if(em.pid)for(var i=0;i<ST.personnels.length;i++){if(ST.personnels[i].id===em.pid){p=ST.personnels[i];break;}}
+  if(em.pid)for(var i=0;i<ST.personnels.length;i++){if(String(ST.personnels[i].id)===String(em.pid)){p=ST.personnels[i];break;}}
   if(!p)p={};
   var isNew=!em.pid,ov=document.createElement("div");ov.className="ov";
   var m=document.createElement("div");m.className="modal";
@@ -1839,6 +1849,24 @@ function rPModal(){
   parts.push('<div class="mr"><label>Couleur</label><input id="pCol" type="color" value="'+(c.color||'#1D9E75')+'" style="height:40px;padding:2px;cursor:pointer"></div>');
   parts.push('<div class="mbtns">'+(isNew?'':'<button class="btn d" id="dPar">Supprimer</button>')+'<button class="btn" id="cPar">Annuler</button><button class="btn p" id="sPar">Enregistrer</button></div>');
   m.innerHTML=parts.join('');
+  ov.appendChild(m);return ov;
+}
+
+function rSvcModal() {
+  var ov=document.createElement("div");ov.className="ov";ov.id="svcOv";
+  var m=document.createElement("div");m.className="modal";
+  m.innerHTML='<h3>Modifier le service</h3>'
+    +'<div class="mr"><label>Nom du service</label><input id="editSvcVal" value="'+ST.svcModal.oldVal+'"></div>'
+    +'<div class="mbtns"><button class="btn" id="cSvc">Annuler</button><button class="btn p" id="sSvc">Enregistrer</button></div>';
+  ov.appendChild(m);return ov;
+}
+
+function rGrpModal() {
+  var ov=document.createElement("div");ov.className="ov";ov.id="grpOv";
+  var m=document.createElement("div");m.className="modal";
+  m.innerHTML='<h3>Modifier le groupe</h3>'
+    +'<div class="mr"><label>Nom du groupe</label><input id="editGrpVal" value="'+ST.grpModal.oldVal+'"></div>'
+    +'<div class="mbtns"><button class="btn" id="cGrp">Annuler</button><button class="btn p" id="sGrp">Enregistrer</button></div>';
   ov.appendChild(m);return ov;
 }
 
@@ -1900,22 +1928,28 @@ function rParametres(){
   // -- CAUSES --
   var c1=document.createElement("div");c1.className="pc";
   c1.innerHTML="<h3>Causes configurées</h3>";
+  var tblC = document.createElement("div"); tblC.style.display="flex"; tblC.style.flexDirection="column"; tblC.style.gap="8px";
   for(var i=0;i<ST.causes.length;i++){
     var c=ST.causes[i];
-    var pi=document.createElement("div");pi.className="pi";pi.style.cursor="pointer";
-    pi.setAttribute("data-ec",c.id);
-    pi.innerHTML='<div class="cdot" style="background:'+c.color+'"></div><span class="pil">'+c.label+'</span><span class="pn">'+c.id+'</span>';
-    c1.appendChild(pi);
+    tblC.innerHTML += '<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">'
+        + '<div style="display:flex; align-items:center; gap:10px;"><div class="cdot" style="background:'+c.color+'"></div><span style="font-weight:600;">'+c.label+' <span style="color:var(--tx3); font-size:11px;">('+c.short+')</span></span></div>'
+        + '<div><button class="eb" data-ec="'+c.id+'" style="padding:4px 8px; font-size:11px;">Modifier</button></div>'
+        + '</div>';
   }
+  c1.appendChild(tblC);
   c1.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Créez autant de causes que vous souhaitez pour le planning.</i></p>';
   pg.appendChild(c1);
   
   // -- SERVICES --
   var c2=document.createElement("div");c2.className="pc";c2.innerHTML="<h3>Services disponibles</h3>";
   var svcList = document.createElement("div");
-  svcList.style.display = "flex"; svcList.style.flexWrap = "wrap"; svcList.style.gap = "8px";
+  svcList.style.display = "flex"; svcList.style.flexDirection = "column"; svcList.style.gap = "8px";
   for(var i=0;i<ST.services.length;i++){
-    svcList.innerHTML+='<span style="background:var(--bg2); border:1px solid var(--bd1); padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; display:flex; align-items:center;">'+ST.services[i]+'<button class="del-svc" data-svc="'+ST.services[i]+'" style="background:none;border:none;color:#E24B4A;cursor:pointer;margin-left:6px;font-size:14px;" title="Supprimer">&times;</button></span>';
+    svcList.innerHTML+='<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">'
+        + '<span style="font-weight:600; font-size:13px;">'+ST.services[i]+'</span>'
+        + '<div style="display:flex; gap:6px;"><button class="eb edit-svc" data-editsvc="'+ST.services[i]+'" style="padding:4px 8px; font-size:11px;">Modifier</button>'
+        + '<button class="eb del-svc" data-svc="'+ST.services[i]+'" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div>'
+        + '</div>';
   }
   c2.appendChild(svcList);
   c2.innerHTML+='<div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newSvc" placeholder="Nouveau service..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addSvcBtn" style="padding:6px 12px;">Ajouter</button></div>';
@@ -1924,9 +1958,13 @@ function rParametres(){
   // -- GROUPES --
   var cGrp=document.createElement("div");cGrp.className="pc";cGrp.innerHTML="<h3>Groupes disponibles</h3>";
   var grpList = document.createElement("div");
-  grpList.style.display = "flex"; grpList.style.flexWrap = "wrap"; grpList.style.gap = "8px";
+  grpList.style.display = "flex"; grpList.style.flexDirection = "column"; grpList.style.gap = "8px";
   for(var i=0;i<ST.groupes.length;i++){
-    grpList.innerHTML+='<span style="background:var(--bg2); border:1px solid var(--bd1); padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; display:flex; align-items:center;">'+ST.groupes[i]+'<button class="del-grp" data-grp="'+ST.groupes[i]+'" style="background:none;border:none;color:#E24B4A;cursor:pointer;margin-left:6px;font-size:14px;" title="Supprimer">&times;</button></span>';
+    grpList.innerHTML+='<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">'
+        + '<span style="font-weight:600; font-size:13px;">'+ST.groupes[i]+'</span>'
+        + '<div style="display:flex; gap:6px;"><button class="eb edit-grp" data-editgrp="'+ST.groupes[i]+'" style="padding:4px 8px; font-size:11px;">Modifier</button>'
+        + '<button class="eb del-grp" data-grp="'+ST.groupes[i]+'" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div>'
+        + '</div>';
   }
   cGrp.appendChild(grpList);
   cGrp.innerHTML+='<div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newGrp" placeholder="Nouveau groupe..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addGrpBtn" style="padding:6px 12px;">Ajouter</button></div>';
@@ -1997,7 +2035,7 @@ function bindAppEvents(){
       });
   }
 
-  // ScrollSpy et Navigation Mois (Uniquement vue planning global)
+  // ScrollSpy et Navigation Mois
   var mbs=document.querySelectorAll(".month-btn");
   for(var i=0;i<mbs.length;i++){(function(b){
       b.addEventListener("click",function(e){
@@ -2005,10 +2043,8 @@ function bindAppEvents(){
           var el=document.getElementById("m-start-"+m);
           var gc=document.querySelector(".gc");
           if(el && gc) {
-              ST.ignoreScroll = true;
               var offset = el.offsetLeft - getNameColWidth(); 
               gc.scrollTo({left: offset, behavior: "smooth"});
-              setTimeout(function(){ ST.ignoreScroll = false; ST.lastScrollX = gc.scrollLeft; }, 500);
           }
       });
   })(mbs[i]);}
@@ -2018,9 +2054,9 @@ function bindAppEvents(){
       gcElem.addEventListener("scroll", function() {
           if(ST.ignoreScroll) return;
           var sl = gcElem.scrollLeft;
-          if (sl === 0 && ST.lastScrollX > 0 && gcElem.scrollWidth <= gcElem.clientWidth) return;
-          ST.lastScrollX = sl; 
-          ST.lastScrollY = gcElem.scrollTop;
+          if (sl === 0 && ST.scrollPlanX > 0 && gcElem.scrollWidth <= gcElem.clientWidth) return;
+          ST.scrollPlanX = sl; 
+          ST.scrollPlanY = gcElem.scrollTop;
           
           var activeM = 0;
           for(var m=11; m>=0; m--) {
@@ -2034,6 +2070,15 @@ function bindAppEvents(){
               if(parseInt(b.getAttribute("data-month")) === activeM) b.classList.add("active");
               else b.classList.remove("active");
           });
+      });
+  }
+
+  var calElem = document.querySelector(".cal-wrapper");
+  if(calElem && ST.tab === "calendrier") {
+      calElem.addEventListener("scroll", function() {
+          if(ST.ignoreScroll) return;
+          ST.scrollCalX = calElem.scrollLeft;
+          ST.scrollCalY = calElem.scrollTop;
       });
   }
 
@@ -2221,7 +2266,7 @@ function bindModalEvents() {
   var cEd=document.getElementById("cEd"),sEd=document.getElementById("sEd"),dPer=document.getElementById("dPer");
   if(cEd)cEd.addEventListener("click",function(){ST.eModal=null;renderModals();});
   if(dPer)dPer.addEventListener("click",function(){
-    var pid=ST.eModal.pid; ST.personnels=ST.personnels.filter(function(p){return p.id!==pid;});
+    var pid=ST.eModal.pid; ST.personnels=ST.personnels.filter(function(p){return String(p.id)!==String(pid);});
     ST.eModal=null; saveConfig(); renderApp();
   });
   if(sEd)sEd.addEventListener("click",function(){
@@ -2234,7 +2279,7 @@ function bindModalEvents() {
     if(grp && ST.groupes.indexOf(grp) === -1) ST.groupes.push(grp);
     
     if(ST.eModal.pid){
-      for(var i=0;i<ST.personnels.length;i++){if(ST.personnels[i].id===ST.eModal.pid){
+      for(var i=0;i<ST.personnels.length;i++){if(String(ST.personnels[i].id)===String(ST.eModal.pid)){
           ST.personnels[i].nom=nom;
           ST.personnels[i].service=svc;
           ST.personnels[i].groupe=grp;
@@ -2267,6 +2312,40 @@ function bindModalEvents() {
     }
     ST.pModal=null; saveConfig(); renderApp();
   });
+
+  var cSvc=document.getElementById("cSvc"), sSvc=document.getElementById("sSvc"), svcOv=document.getElementById("svcOv");
+  if(cSvc) cSvc.addEventListener("click", function(){ ST.svcModal=null; renderModals(); });
+  if(svcOv) svcOv.addEventListener("click", function(e){ if(e.target===svcOv){ ST.svcModal=null; renderModals(); } });
+  if(sSvc) sSvc.addEventListener("click", function(){
+      var newVal = document.getElementById("editSvcVal").value.trim();
+      if(newVal && newVal !== ST.svcModal.oldVal) {
+          var idx = ST.services.indexOf(ST.svcModal.oldVal);
+          if(idx > -1) ST.services[idx] = newVal;
+          ST.personnels.forEach(function(p){ if(p.service === ST.svcModal.oldVal) p.service = newVal; });
+          ST.services.sort();
+          ST.svcModal = null;
+          saveConfig(); renderApp();
+      } else {
+          ST.svcModal = null; renderModals();
+      }
+  });
+
+  var cGrp=document.getElementById("cGrp"), sGrp=document.getElementById("sGrp"), grpOv=document.getElementById("grpOv");
+  if(cGrp) cGrp.addEventListener("click", function(){ ST.grpModal=null; renderModals(); });
+  if(grpOv) grpOv.addEventListener("click", function(e){ if(e.target===grpOv){ ST.grpModal=null; renderModals(); } });
+  if(sGrp) sGrp.addEventListener("click", function(){
+      var newVal = document.getElementById("editGrpVal").value.trim();
+      if(newVal && newVal !== ST.grpModal.oldVal) {
+          var idx = ST.groupes.indexOf(ST.grpModal.oldVal);
+          if(idx > -1) ST.groupes[idx] = newVal;
+          ST.personnels.forEach(function(p){ if(p.groupe === ST.grpModal.oldVal) p.groupe = newVal; });
+          ST.groupes.sort();
+          ST.grpModal = null;
+          saveConfig(); renderApp();
+      } else {
+          ST.grpModal = null; renderModals();
+      }
+  });
   
   var bmFs=document.getElementById("bmFs"),bmFg=document.getElementById("bmFg"),bCsv=document.getElementById("bCsv");
   if(bmFs)bmFs.addEventListener("change",function(){ST.bModal.fs=bmFs.value;renderModals();});
@@ -2296,13 +2375,25 @@ if(checkGasUrl()) {
       }
       ST.loaded = true;
       renderApp();
-      setTimeout(scrollTd, 300);
+      
+      // Auto-centrage uniquement au premier chargement réussi
+      if(!ST.initialScrollDone) {
+          scrollTd();
+          ST.initialScrollDone = true;
+      }
+      
       showToast("Planning synchronisé");
     }).catch(function(e){
       console.error("Google Sheets Error:",e);
       ST.loaded = true;
       renderApp();
-      setTimeout(scrollTd, 300);
+      
+      // Auto-centrage même en cas d'erreur locale (hors ligne)
+      if(!ST.initialScrollDone) {
+          scrollTd();
+          ST.initialScrollDone = true;
+      }
+      
       showToast("Mode hors ligne ou Erreur URL", true);
     });
 
@@ -2333,7 +2424,7 @@ if(checkGasUrl()) {
               ST.services = tempSvc;
               ST.groupes = tempGrp;
               
-              if(ST.tab === "planning" && !ST.modal && !ST.bModal && !ST.tutoModal) {
+              if(ST.tab === "planning" && !ST.modal && !ST.bModal && !ST.tutoModal && !ST.eModal && !ST.pModal && !ST.svcModal && !ST.grpModal) {
                   renderApp();
               }
           }
