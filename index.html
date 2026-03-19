@@ -78,7 +78,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .leg-swatch{width:16px;height:16px;border-radius:4px;flex-shrink:0;border:1px solid var(--bd2)}
 
 .month-nav{background:var(--bg1);border-bottom:0.5px solid var(--bd1);padding:8px 16px;display:flex;align-items:center;gap:12px;overflow-x:auto}
-.month-filters{display:flex;gap:10px}
+.month-filters{display:flex;gap:10px; align-items:center;}
 .month-filters select{padding:6px 12px;border:1px solid var(--bd1);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px;font-weight:600;cursor:pointer; transition:all 0.2s;}
 .month-filters select:hover{background:var(--bg3);}
 .month-btns-wrap{display:flex;gap:6px;margin-left:auto}
@@ -153,7 +153,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .bm-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--bd1);flex-wrap:wrap;gap:12px;background:var(--bg2)}
 .bm-hl{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:1}
 .bm-hdr h2{font-size:20px;font-weight:700}
-.bm-hf{display:flex;gap:8px}
+.bm-hf{display:flex;gap:8px; align-items:center;}
 .bm-hf select{padding:8px 12px;border:1px solid var(--bd1);border-radius:6px;background:var(--bg1);color:var(--tx1);font-size:13px; font-weight:500;}
 .bm-x{background:none;border:none;cursor:pointer;font-size:24px;color:var(--tx2);padding:4px 8px;border-radius:6px;transition:background 0.2s}
 .bm-x:hover{background:var(--bd1);color:var(--tx1)}
@@ -246,6 +246,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
     .month-nav { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 10px; padding: 6px 10px; }
     .month-filters { flex-direction: row; flex-wrap: nowrap; width: auto; flex-shrink: 0; }
     .month-filters select { width: auto; font-size: 13px !important; padding: 4px 8px; }
+    .search-input { width: 150px !important; font-size: 13px !important; }
     .month-btns-wrap { overflow-x: visible; width: auto; flex-shrink: 0; }
 
     /* Grille Planning Mobile */
@@ -884,6 +885,13 @@ function currWk(){
   return {mon:mon,fri:fri,wk:isoWk(mon.getFullYear(),mon.getMonth(),mon.getDate())};
 }
 
+function nextWk(){
+  var t=new Date(),d=(t.getDay()+6)%7;
+  var mon=new Date(t);mon.setDate(t.getDate()-d+7); 
+  var fri=new Date(mon);fri.setDate(mon.getDate()+4);
+  return {mon:mon,fri:fri,wk:isoWk(mon.getFullYear(),mon.getMonth(),mon.getDate())};
+}
+
 function prevMo(){
   var pm=TODAY.getMonth()-1,py=TODAY.getFullYear();
   if(pm<0){pm=11;py--;}
@@ -965,37 +973,44 @@ function applyCellVisuals(ec, ev) {
     } else if (ev.type === 'half') {
         var amIsAst = ev.am && cLabel(ev.am.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
         var pmIsAst = ev.pm && cLabel(ev.pm.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
+        var isHoriz = amIsAst || pmIsAst;
         
         var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
         var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
         
-        // ASTREINTE force la coupure à l'horizontale, sinon en diagonale par défaut
-        if(amIsAst || pmIsAst) {
+        if (isHoriz) {
             ec.style.backgroundImage = 'linear-gradient(to bottom, '+amCol+' 50%, '+pmCol+' 50%)';
         } else {
             ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
         }
         
         var title = "";
-        var lbls = [];
         var hasCmt = false;
         
         if(ev.am){
-            title += cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment ? " - "+ev.am.comment : "");
-            lbls.push(cShort(ev.am.causeId));
+            title += cLabel(ev.am.causeId) + (isHoriz && amIsAst ? "" : " (Matin)") + (ev.am.comment ? " - "+ev.am.comment : "");
             if(ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
         }
         if(ev.pm){
             if(title) title += "\n";
-            title += cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment ? " - "+ev.pm.comment : "");
-            lbls.push(cShort(ev.pm.causeId));
+            title += cLabel(ev.pm.causeId) + (isHoriz && pmIsAst ? "" : " (Aprem)") + (ev.pm.comment ? " - "+ev.pm.comment : "");
             if(ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
         }
         
         ec.title = title;
-        var fs = lbls.length > 1 ? "10px" : "12px";
-        var ls = lbls.length > 1 ? "-0.5px" : "normal";
-        ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
+        
+        if (isHoriz) {
+            var topLbl = ev.am ? cShort(ev.am.causeId) : '';
+            var botLbl = ev.pm ? cShort(ev.pm.causeId) : '';
+            ec.innerHTML = '<div style="display:flex; flex-direction:column; height:100%; width:100%; justify-content:space-evenly; align-items:center; font-size:10px; font-weight:900; color:white; text-shadow:0 1px 2px rgba(0,0,0,0.8); line-height:1; z-index:2;"><span>'+topLbl+'</span><span>'+botLbl+'</span></div>';
+        } else {
+            var lbls = [];
+            if(ev.am) lbls.push(cShort(ev.am.causeId));
+            if(ev.pm) lbls.push(cShort(ev.pm.causeId));
+            var fs = lbls.length > 1 ? "10px" : "12px";
+            var ls = lbls.length > 1 ? "-0.5px" : "normal";
+            ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
+        }
         if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
     }
 }
@@ -1019,6 +1034,20 @@ function updateCellVisual(ec, baseKey, y, mo, d) {
 
 // === RENDU PRINCIPAL & GESTION TOTALE SANS RECHARGEMENT ===
 function renderApp(){
+  var activeElId = document.activeElement ? document.activeElement.id : null;
+  var selStart = document.activeElement ? document.activeElement.selectionStart : null;
+  
+  var gcElemBefore = document.querySelector(".gc");
+  var savedX = ST.lastScrollX || 0;
+  var savedY = ST.lastScrollY || 0;
+  if(gcElemBefore) {
+      savedX = gcElemBefore.scrollLeft;
+      savedY = gcElemBefore.scrollTop;
+      ST.lastScrollX = savedX;
+      ST.lastScrollY = savedY;
+      ST.ignoreScroll = true; // Lock scroll updates BEFORE destroying DOM
+  }
+
   var app=document.getElementById("app");
   app.innerHTML="";
   
@@ -1056,14 +1085,11 @@ function renderApp(){
   
   parts.push('<div class="bilan-btns">');
   parts.push('<button class="bilan-btn" id="bS0" style="background:var(--bg2); color:var(--tx1);">&#128337; Absent cette semaine</button>');
+  parts.push('<button class="bilan-btn" id="bS_next" style="background:var(--bg2); color:var(--tx1);">&#128337; Absent la semaine prochaine</button>');
   parts.push('<button class="bilan-btn" id="bS1">&#128337; Bilan S-1</button>');
   parts.push('<button class="bilan-btn" id="bM1">&#128337; Bilan M-1</button>');
   parts.push('<button class="bilan-btn" id="bAn">&#9998; Bilan global '+ST.year+'</button>');
   parts.push('<button class="bilan-btn" id="bHelp" style="background:#3B82F6; color:white; border-color:#3B82F6;">❓ Tuto</button>');
-  parts.push('</div>');
-  
-  parts.push('<div class="filters">');
-  parts.push('<input type="text" id="fSearch" class="search-input" placeholder="🔎 Rechercher un employé..." value="'+ST.fSearch+'">');
   parts.push('</div>');
   
   tb.innerHTML=parts.join('');
@@ -1078,6 +1104,36 @@ function renderApp(){
   // Appels Évènements Principaux (hors modales)
   bindAppEvents();
   renderModals();
+
+  // RESTAURATION DU SCROLL ABSOLUMENT SÉCURISÉE
+  var gcElemAfter = document.querySelector(".gc");
+  if(gcElemAfter && savedX !== undefined) {
+      // Force un reflow synchrone pour appliquer le scroll instantanément
+      void gcElemAfter.offsetHeight; 
+      gcElemAfter.scrollLeft = savedX;
+      gcElemAfter.scrollTop = savedY;
+      
+      requestAnimationFrame(function() {
+          var newGc = document.querySelector(".gc");
+          if(newGc) {
+              newGc.scrollLeft = savedX;
+              newGc.scrollTop = savedY;
+              setTimeout(function(){ ST.ignoreScroll = false; }, 50);
+          } else {
+              ST.ignoreScroll = false;
+          }
+      });
+  } else {
+      ST.ignoreScroll = false;
+  }
+
+  if(activeElId) {
+    var el = document.getElementById(activeElId);
+    if(el) {
+      el.focus();
+      if(selStart !== null && el.setSelectionRange) el.setSelectionRange(selStart, selStart);
+    }
+  }
 }
 
 function renderModals() {
@@ -1132,10 +1188,10 @@ function rPlanning(){
   lb.appendChild(lpc);
   
   var pt=document.createElement("div");pt.className="period-toggles";
+  pt.style.marginLeft = "10px";
   pt.innerHTML='<button class="period-btn'+(ST.selectedPeriod==='full'?' active':'')+'" data-period="full" title="Journée entière">Jour</button>'
               +'<button class="period-btn'+(ST.selectedPeriod==='am'?' active':'')+'" data-period="am" title="Matin (Demi-case Haut/Gauche)">Matin</button>'
               +'<button class="period-btn'+(ST.selectedPeriod==='pm'?' active':'')+'" data-period="pm" title="Après-midi (Demi-case Bas/Droite)">Aprem</button>';
-  lb.appendChild(pt);
   
   var ex=document.createElement("div");ex.className="legend-extras";
   ex.innerHTML='<div class="leg-item"><div class="leg-swatch" style="background:#fde68a"></div>Férié</div>'
@@ -1147,7 +1203,10 @@ function rPlanning(){
   
   var mf=document.createElement("div");mf.className="month-filters";
   mf.innerHTML='<select id="fSvc"><option value="">Tous les services</option>'+selOpts(ST.services,ST.fSvc)+'</select>'
-              +'<select id="fGrp"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,ST.fGrp)+'</select>';
+              +'<select id="fGrp"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,ST.fGrp)+'</select>'
+              +'<input type="text" id="fSearch" class="search-input" style="margin-left:10px; width:200px;" placeholder="🔎 Rechercher un employé..." value="'+ST.fSearch+'">';
+  
+  mf.appendChild(pt);
   mn.appendChild(mf);
 
   var mbWrap=document.createElement("div");mbWrap.className="month-btns-wrap";
@@ -1274,18 +1333,27 @@ function rTutoModal() {
     var html = '<div class="bm-hdr"><h2>📖 Tutoriel d\'utilisation</h2><button class="bm-x" id="clTuto">&#10005;</button></div>';
     html += '<div class="bm-body" style="padding:24px; font-size:14px; line-height:1.6; color:var(--tx1);">';
     
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-bottom:10px;">1️⃣ Poser une absence</h3>';
-    html += '<p>Sélectionnez un motif en haut (ex: <span class="legend-pill" style="background:#3B82F622; color:#3B82F6; padding:4px 10px; font-size:12px; border:1px solid #3B82F6;">CP (2)</span>), puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>. Cliquez (clic gauche) sur une case vide pour la remplir.</p>';
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-bottom:10px;">1️⃣ Poser une absence complète</h3>';
+    html += '<p>Sélectionnez un motif en haut (ex: <span class="legend-pill" style="background:#3B82F622; color:#3B82F6; padding:4px 10px; font-size:12px; border:1px solid #3B82F6;">CP (2)</span>), puis choisissez <b>Jour</b>. Cliquez (clic gauche) sur une case vide pour la remplir entièrement.</p>';
     html += '<p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Le clic gauche ne fonctionne QUE si un motif est sélectionné en haut. Sinon, il ne se passe rien !</p>';
 
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">2️⃣ Astreintes et Demi-journées</h3>';
-    html += '<p>L\'outil <b>ASTREINTE</b> est magique : même si vous êtes en "Journée entière", cliquer sur une case posera l\'Astreinte uniquement sur la moitié haute de la case ! La partie basse restera libre.</p>';
-    html += '<p>Vous pouvez ensuite sélectionner un autre motif (ex: CP), cliquer sur "Aprem", et cliquer sur la <b>même case</b>. Le CP se mettra en bas de la case.</p>';
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">2️⃣ Les Demi-Journées (Matin / Après-midi)</h3>';
+    html += '<p>Vous pouvez très facilement poser une demi-journée, ou même combiner deux motifs différents sur une même journée ! Pour cela, utilisez les boutons <b>Matin</b> et <b>Aprem</b> de la barre supérieure.</p>';
+    html += '<div style="display:flex; align-items:center; gap:12px; margin-top:8px; background:var(--bg2); padding:12px; border-radius:8px;">';
+    html += '  <div style="flex:1;">';
+    html += '    <ol style="margin-left:20px; margin-bottom:0;">';
+    html += '      <li>Sélectionnez <span style="color:#E24B4A; font-weight:bold;">JRTT</span>, cliquez sur <b>Matin</b>, puis remplissez la case.</li>';
+    html += '      <li>Sélectionnez <span style="color:#3B82F6; font-weight:bold;">CP</span>, cliquez sur <b>Aprem</b>, puis cliquez sur la <b>même case</b> !</li>';
+    html += '    </ol>';
+    html += '  </div>';
+    html += '  <div style="text-align:center; padding-left:16px; border-left:2px dashed var(--bd2);">';
+    html += '    <div style="font-size:11px; color:var(--tx2); margin-bottom:4px;">Résultat</div>';
+    html += '    <div style="width:40px; height:40px; background:linear-gradient(to bottom right, #E24B4A 50%, #3B82F6 50%); border-radius:4px; box-shadow:0 2px 4px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:bold; letter-spacing:-0.5px; margin:0 auto;">1/2</div>';
+    html += '  </div>';
+    html += '</div>';
 
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">3️⃣ Effacer ou Remplacer une case</h3>';
-    html += '<p>Une case pleine <b>ne peut pas être écrasée</b> par erreur. Il faut obligatoirement :</p>';
-    html += '<ul><li>Soit utiliser la <span class="legend-pill" style="background:#fce7f3; color:#db2777; padding:4px 10px; font-size:12px; border:1px solid #db2777;">🧽 Gomme</span> en haut pour l\'effacer.</li>';
-    html += '<li>Soit faire un Clic Droit pour vider la case manuellement.</li></ul>';
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">3️⃣ Effacer avec la Gomme</h3>';
+    html += '<p>Cliquez sur le bouton <span class="legend-pill" style="background:#fce7f3; color:#db2777; padding:4px 10px; font-size:12px; border:1px solid #db2777;">🧽 Gomme</span> dans la barre du haut. Cliquez ensuite sur la case à effacer. <b>La gomme efface désormais la case complète (matin et après-midi), quoi qu\'il arrive !</b></p>';
 
     html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">4️⃣ Clic Droit = Détails & Commentaires</h3>';
     html += '<p>Faites un <b>Clic Droit</b> sur n\'importe quelle case du planning pour ouvrir la fenêtre de détails. Vous pourrez forcer les motifs et taper une raison explicative.</p>';
@@ -1356,7 +1424,7 @@ function rModal(){
   parts2.push('<div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">'+DL[dw]+' '+m2.day+' '+MO[m2.month]+' '+ST.year+' <span style="margin:0 8px">&mdash;</span> S'+p2(wk)+badge+'</div>');
   
   parts2.push('<div class="half-day-split">');
-  parts2.push('<div style="flex:1"><label>☀️ Matin (ou Astreinte)</label><select id="mC_am" style="margin-bottom:8px;">'+makeOpts(amC)+'</select><input id="mCm_am" value="'+amCm+'" placeholder="Commentaire..."/></div>');
+  parts2.push('<div style="flex:1"><label>☀️ Matin</label><select id="mC_am" style="margin-bottom:8px;">'+makeOpts(amC)+'</select><input id="mCm_am" value="'+amCm+'" placeholder="Commentaire..."/></div>');
   parts2.push('<div style="flex:1"><label>🌙 Après-midi</label><select id="mC_pm" style="margin-bottom:8px;">'+makeOpts(pmC)+'</select><input id="mCm_pm" value="'+pmCm+'" placeholder="Commentaire..."/></div>');
   parts2.push('</div>');
 
@@ -1386,6 +1454,11 @@ function rBilan(){
     title="Historique S-1";
     badge="Semaine analysée : S"+p2(pw.wk)+" — "+p2(pw.mon.getDate())+" "+MS[pw.mon.getMonth()]+" au "+p2(pw.fri.getDate())+" "+MS[pw.fri.getMonth()]+" "+pw.fri.getFullYear();
     evs=evRange(pw.mon.getFullYear(),pw.mon.getMonth(),pw.mon.getDate(),pw.fri.getFullYear(),pw.fri.getMonth(),pw.fri.getDate(),fs,fg);
+  }else if(bm.type==="semaine_prochaine"){
+    var nw=nextWk();
+    title="Absents la semaine prochaine";
+    badge="Semaine prochaine : S"+p2(nw.wk)+" — "+p2(nw.mon.getDate())+" "+MS[nw.mon.getMonth()]+" au "+p2(nw.fri.getDate())+" "+MS[nw.fri.getMonth()]+" "+nw.fri.getFullYear();
+    evs=evRange(nw.mon.getFullYear(),nw.mon.getMonth(),nw.mon.getDate(),nw.fri.getFullYear(),nw.fri.getMonth(),nw.fri.getDate(),fs,fg);
   }else if(bm.type==="mois"){
     var pm=prevMo();
     title="Historique M-1";
@@ -1443,7 +1516,7 @@ function rBilan(){
     var csvHeads = ["Employé", "Service", "Groupe"];
     var hds='<th>Employé</th><th>Service</th>';
     for(var i=0;i<ST.causes.length;i++){
-      hds+='<th style="color:'+ST.causes[i].color+'">'+ST.causes[i].id+'</th>';
+      hds+='<th style="color:'+ST.causes[i].color+'">'+ST.causes[i].label+'</th>';
       csvHeads.push(ST.causes[i].label);
     }
     hds+='<th>Total '+ST.year+'</th>';
@@ -1530,7 +1603,7 @@ function rBilan(){
   var selSvc='<select id="bmFs"><option value="">Tous les services</option>'+selOpts(ST.services,fs)+'</select>';
   var selGrp='<select id="bmFg"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,fg)+'</select>';
   
-  var filtresHdr = (bm.type !== 'person') ? '<div class="bm-hf">'+selSvc+selGrp+'<button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>' : '<div class="bm-hf"><button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>';
+  var filtresHdr = '<div class="bm-hf">'+selSvc+selGrp+'<button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>';
 
   m.innerHTML='<div class="bm-hdr"><div class="bm-hl"><span style="font-size:24px; color:var(--primary)">'+(bm.type==='person'?'👤':'&#128337;')+'</span><h2>'+title+'</h2>'
     +filtresHdr+'</div>'
@@ -1636,7 +1709,7 @@ function rParametres(){
     pi.innerHTML='<div class="cdot" style="background:'+c.color+'"></div><span class="pil">'+c.label+'</span><span class="pn">'+c.id+'</span>';
     c1.appendChild(pi);
   }
-  c1.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Astuce: Créez une cause nommée "ASTREINTE" pour qu\'elle se comporte de façon spécifique (elle se positionne automatiquement sur la partie haute d\'une case) !</i></p>';
+  c1.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Créez autant de causes que vous souhaitez pour le planning.</i></p>';
   pg.appendChild(c1);
   
   // -- SERVICES --
@@ -1747,6 +1820,7 @@ function bindAppEvents(){
       gcElem.addEventListener("scroll", function() {
           if(ST.ignoreScroll) return;
           var sl = gcElem.scrollLeft;
+          if (sl === 0 && ST.lastScrollX > 0 && gcElem.scrollWidth <= gcElem.clientWidth) return;
           ST.lastScrollX = sl; 
           ST.lastScrollY = gcElem.scrollTop;
           
@@ -1771,8 +1845,10 @@ function bindAppEvents(){
   if(fSearch)fSearch.addEventListener("input",function(e){ST.fSearch=e.target.value;renderApp();});
   
   var bS0=document.getElementById("bS0"),bS1=document.getElementById("bS1"),bM1=document.getElementById("bM1"),bAn=document.getElementById("bAn");
+  var bS_next=document.getElementById("bS_next");
   if(bS0)bS0.addEventListener("click",function(){ST.bModal={type:"semaine_courante"};renderModals();});
   if(bS1)bS1.addEventListener("click",function(){ST.bModal={type:"semaine"};renderModals();});
+  if(bS_next)bS_next.addEventListener("click",function(){ST.bModal={type:"semaine_prochaine"};renderModals();});
   if(bM1)bM1.addEventListener("click",function(){ST.bModal={type:"mois"};renderModals();});
   if(bAn)bAn.addEventListener("click",function(){ST.bModal={type:"conge"};renderModals();});
   
@@ -1832,48 +1908,27 @@ function bindAppEvents(){
              var deletes = [];
 
              if (ST.selectedCauseId === 'erase') {
-                 // GOMME
-                 if (ST.selectedPeriod === 'full') {
-                     if (existing) {
-                         delete ST.events[baseKey];
-                         deletes.push(baseKey, baseKey+'-am', baseKey+'-pm');
-                     }
-                 } else if (ST.selectedPeriod === 'am') {
-                     if (existing && existing.type === 'full') {
-                         ST.events[baseKey] = { type: 'half', am: null, pm: {causeId: existing.causeId, comment: existing.comment} };
-                         upserts.push({id: baseKey+'-pm', cause_id: existing.causeId, comment: existing.comment});
-                         deletes.push(baseKey, baseKey+'-am');
-                     } else if (existing && existing.type === 'half' && existing.am) {
-                         existing.am = null;
-                         deletes.push(baseKey+'-am');
-                         if (!existing.pm) delete ST.events[baseKey];
-                     }
-                 } else if (ST.selectedPeriod === 'pm') {
-                     if (existing && existing.type === 'full') {
-                         ST.events[baseKey] = { type: 'half', am: {causeId: existing.causeId, comment: existing.comment}, pm: null };
-                         upserts.push({id: baseKey+'-am', cause_id: existing.causeId, comment: existing.comment});
-                         deletes.push(baseKey, baseKey+'-pm');
-                     } else if (existing && existing.type === 'half' && existing.pm) {
-                         existing.pm = null;
-                         deletes.push(baseKey+'-pm');
-                         if (!existing.am) delete ST.events[baseKey];
-                     }
+                 // GOMME ABSOLUE : Efface tout !
+                 if (existing) {
+                     delete ST.events[baseKey];
+                     deletes.push(baseKey, baseKey+'-am', baseKey+'-pm');
                  }
              } else {
-                 // LOGIQUE ASTREINTE : Force sur "Matin" (am) pour libérer le bas
                  var targetPeriod = ST.selectedPeriod;
+                 
+                 // LOGIQUE ASTREINTE : Force sur "Matin" (am) pour libérer le bas
                  var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
                  var isAstreinte = false;
                  if(causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
                      isAstreinte = true;
-                     if (targetPeriod === 'full') targetPeriod = 'am'; 
+                     targetPeriod = 'am'; // FORCE TOUJOURS L'ASTREINTE EN HAUT
                  }
                  
                  // --- NOUVELLE LOGIQUE TOLÉRANCE ASTREINTE ---
                  var conflict = false;
                  var bypassSpecial = false;
 
-                 // Cas 1 : On ajoute Astreinte (am) sur une case Pleine (full) existante
+                 // Cas 1 : On ajoute Astreinte sur une case Pleine (full) existante
                  if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
                      var oldCause = existing.causeId;
                      var oldCmt = existing.comment;
@@ -1883,7 +1938,7 @@ function bindAppEvents(){
                      deletes.push(baseKey);
                      bypassSpecial = true;
                  }
-                 // Cas 2 : On ajoute un motif Plein (full) sur une demi-case existante
+                 // Cas 2 : On ajoute un motif Plein (full) sur une demi-case existante avec Astreinte en haut
                  else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
                      var exAmAst = false, exPmAst = false;
                      if(existing.am) {
@@ -1946,7 +2001,7 @@ function bindAppEvents(){
       }
     });
     
-    // CLIC DROIT = FORCER MODALE DE DETAILS
+    // CLIC DROIT = FORCER MODALE DE DETAILS SANS RECHARGER LE TABLEAU
     ec.addEventListener("contextmenu", function(e) {
         e.preventDefault();
         var pid=parseInt(ec.getAttribute("data-pid"));
@@ -1956,94 +2011,6 @@ function bindAppEvents(){
         if(pid&&day){ST.modal={pid:pid,day:day,month:mo,key:key};renderModals();}
     });
   })(ecs[i]);}
-  
-  // Boutons Personnel
-  var addP=document.getElementById("addP");
-  if(addP)addP.addEventListener("click",function(){ST.eModal={};renderModals();});
-  var epBtns=document.querySelectorAll("[data-ep]");
-  for(var i=0;i<epBtns.length;i++){(function(b){b.addEventListener("click",function(){ST.eModal={pid:parseInt(b.getAttribute("data-ep"))};renderModals();});})(epBtns[i]);}
-  
-  // Boutons Paramètres (Causes)
-  var addC=document.getElementById("addC");
-  if(addC)addC.addEventListener("click",function(){ST.pModal={};renderModals();});
-  var ecBtns=document.querySelectorAll("[data-ec]");
-  for(var i=0;i<ecBtns.length;i++){(function(el){el.addEventListener("click",function(){
-    var id=parseInt(el.getAttribute("data-ec"));
-    for(var j=0;j<ST.causes.length;j++){if(ST.causes[j].id===id){ST.pModal=Object.assign({},ST.causes[j]);renderModals();break;}}
-  });})(ecBtns[i]);}
-
-  // Boutons Paramètres (Services)
-  var addSvcBtn=document.getElementById("addSvcBtn");
-  if(addSvcBtn) addSvcBtn.addEventListener("click", function(){
-      var val=document.getElementById("newSvc").value.trim();
-      if(val && ST.services.indexOf(val)===-1){ ST.services.push(val); ST.services.sort(); saveConfig(); renderApp(); }
-  });
-  var delSvcBtns=document.querySelectorAll(".del-svc");
-  for(var i=0;i<delSvcBtns.length;i++){(function(b){b.addEventListener("click",function(e){
-      var v = e.currentTarget.getAttribute("data-svc");
-      ST.services = ST.services.filter(function(s){return s!==v;}); saveConfig(); renderApp();
-  });})(delSvcBtns[i]);}
-  
-  // Boutons Paramètres (Groupes)
-  var addGrpBtn=document.getElementById("addGrpBtn");
-  if(addGrpBtn) addGrpBtn.addEventListener("click", function(){
-      var val=document.getElementById("newGrp").value.trim();
-      if(val && ST.groupes.indexOf(val)===-1){ ST.groupes.push(val); ST.groupes.sort(); saveConfig(); renderApp(); }
-  });
-  var delGrpBtns=document.querySelectorAll(".del-grp");
-  for(var i=0;i<delGrpBtns.length;i++){(function(b){b.addEventListener("click",function(e){
-      var v = e.currentTarget.getAttribute("data-grp");
-      ST.groupes = ST.groupes.filter(function(g){return g!==v;}); saveConfig(); renderApp();
-  });})(delGrpBtns[i]);}
-
-  // EXPORT EXCEL GLOBAL
-  var btnExportGlobalXlsx = document.getElementById("btnExportGlobalXlsx");
-  if(btnExportGlobalXlsx) {
-      btnExportGlobalXlsx.addEventListener("click", function() {
-          if(typeof XLSX === 'undefined') { showToast("Veuillez patienter, chargement de l'outil d'export...", true); return; }
-          var data = [["Date", "Employé", "Service", "Groupe", "Cause", "Période", "Commentaire"]];
-          var keys = Object.keys(ST.events);
-          keys.sort(function(a,b) {
-              var pA = a.split('-'), pB = b.split('-');
-              var dtA = new Date(pA[1], pA[2], pA[3]).getTime(), dtB = new Date(pB[1], pB[2], pB[3]).getTime();
-              return dtA - dtB;
-          });
-          for(var i=0; i<keys.length; i++) {
-              var k = keys[i];
-              if(k === "__personnels__") continue;
-              var ev = ST.events[k], parts = k.split('-'); 
-              if(parts.length < 4) continue;
-              var pid = parseInt(parts[0]);
-              var p = ST.personnels.find(function(x){ return x.id === pid; });
-              if(!p) continue;
-              var dateStr = p2(parts[3]) + "/" + p2(parseInt(parts[2])+1) + "/" + parts[1];
-              if(ev.type === 'full') {
-                  data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.causeId), 'Jour entier', ev.comment==="Import Excel"?"":ev.comment||""]);
-              } else if(ev.type === 'half') {
-                  if(ev.am) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.am.causeId), 'Matin', ev.am.comment==="Import Excel"?"":ev.am.comment||""]);
-                  if(ev.pm) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.pm.causeId), 'Après-midi', ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]);
-              }
-          }
-          var ws = XLSX.utils.aoa_to_sheet(data);
-          var wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Absences");
-          XLSX.writeFile(wb, "Planning_Absences_Usine_" + ST.year + ".xlsx");
-          showToast("Export XLSX réussi");
-      });
-  }
-
-  // IMPORT EXCEL
-  var btnImportExcel = document.getElementById("btnImportExcel");
-  var excelImportFile = document.getElementById("excelImportFile");
-  if(btnImportExcel && excelImportFile) {
-      btnImportExcel.addEventListener("click", function() {
-          if(!excelImportFile.files || !excelImportFile.files[0]) { showToast("Veuillez sélectionner un fichier Excel", true); return; }
-          var file = excelImportFile.files[0];
-          var reader = new FileReader();
-          reader.onload = function(e) { processExcelImport(e.target.result); };
-          reader.readAsArrayBuffer(file);
-      });
-  }
 }
 
 // === EVENEMENTS DES MODALES (Séparé pour ne pas casser le scroll) ===
@@ -2065,6 +2032,17 @@ function bindModalEvents() {
     var cid_pm = parseInt(document.getElementById("mC_pm").value) || null;
     var cm_pm = document.getElementById("mCm_pm").value.trim();
     var key = ST.modal.key;
+    
+    // Auto-swap si Astreinte a été mise dans l'après-midi par erreur dans la fenêtre
+    if (cid_pm) {
+        var cPmObj = ST.causes.find(function(c){return c.id === cid_pm;});
+        if (cPmObj && cPmObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
+            var tC = cid_am, tCm = cm_am;
+            cid_am = cid_pm; cm_am = cm_pm;
+            cid_pm = tC; cm_pm = tCm;
+        }
+    }
+
     var upserts = [], deletes = [];
     
     if (cid_am && cid_pm && cid_am === cid_pm && cm_am === cm_pm) {
