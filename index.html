@@ -312,6 +312,19 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 // === CONFIGURATION BASE DE DONNÉES (Google Sheets) ===
 var GAS_URL = "https://script.google.com/macros/s/AKfycbwtgIAd33LQ6yVKFWB89TCddMGtZlxQRkfepLjpvZvTYvu1vPoGuiGiCBwj8SaaRwbhqQ/exec";
 
+// Fonction de fetch robuste (attrape les erreurs silencieusement pour éviter l'erreur console)
+const sbFetch = async (url, options) => {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (err) {
+    throw new Error("Network request failed");
+  }
+};
+
 // GESTION DES COMMENTAIRES ET PERIODES
 function parseCmt(raw) {
     if(!raw) return {p:'full', c:''};
@@ -329,92 +342,99 @@ function checkGasUrl() {
     return true;
 }
 
-function loadDB(){
-  if(!checkGasUrl()) return Promise.reject("URL non configurée");
+async function loadDB(){
+  if(!checkGasUrl()) return null;
   setSS("spin");
   
-  return fetch(GAS_URL).then(function(r){
-    if(!r.ok) throw new Error("Erreur réseau");
-    return r.json();
-  }).then(function(rows){
-    var ev={};
-    var loadedPers=null, loadedCauses=null, loadedSvc=null, loadedGrp=null;
-    
-    if(rows && Array.isArray(rows)) {
-      rows.forEach(function(r){
-        if(r.id==="__personnels__"){ try{loadedPers=JSON.parse(r.comment);}catch(e){} }
-        else if(r.id==="__causes__"){ try{loadedCauses=JSON.parse(r.comment);}catch(e){} }
-        else if(r.id==="__services__"){ try{loadedSvc=JSON.parse(r.comment);}catch(e){} }
-        else if(r.id==="__groupes__"){ try{loadedGrp=JSON.parse(r.comment);}catch(e){} }
-        else {
-          var baseKey = r.id.replace('-am','').replace('-pm','');
-          if(!ev[baseKey]) ev[baseKey] = { type: 'empty' };
-          
-          var parsed = parseCmt(r.comment);
-          var isAm = r.id.endsWith('-am') || parsed.p === 'am';
-          var isPm = r.id.endsWith('-pm') || parsed.p === 'pm';
-          var isFull = !isAm && !isPm;
-          
-          if(isFull){
-              ev[baseKey] = { type: 'full', causeId: r.cause_id, comment: parsed.c };
-          } else {
-              if (ev[baseKey].type !== 'half') ev[baseKey] = { type: 'half', am: null, pm: null };
-              if (isAm) ev[baseKey].am = { causeId: r.cause_id, comment: parsed.c };
-              if (isPm) ev[baseKey].pm = { causeId: r.cause_id, comment: parsed.c };
+  try {
+      const rows = await sbFetch(GAS_URL);
+      var ev={};
+      var loadedPers=null, loadedCauses=null, loadedSvc=null, loadedGrp=null;
+      
+      if(rows && Array.isArray(rows)) {
+        rows.forEach(function(r){
+          if(r.id==="__personnels__"){ try{loadedPers=JSON.parse(r.comment);}catch(e){} }
+          else if(r.id==="__causes__"){ try{loadedCauses=JSON.parse(r.comment);}catch(e){} }
+          else if(r.id==="__services__"){ try{loadedSvc=JSON.parse(r.comment);}catch(e){} }
+          else if(r.id==="__groupes__"){ try{loadedGrp=JSON.parse(r.comment);}catch(e){} }
+          else {
+            var baseKey = r.id.replace('-am','').replace('-pm','');
+            if(!ev[baseKey]) ev[baseKey] = { type: 'empty' };
+            
+            var parsed = parseCmt(r.comment);
+            var isAm = r.id.endsWith('-am') || parsed.p === 'am';
+            var isPm = r.id.endsWith('-pm') || parsed.p === 'pm';
+            var isFull = !isAm && !isPm;
+            
+            if(isFull){
+                ev[baseKey] = { type: 'full', causeId: r.cause_id, comment: parsed.c };
+            } else {
+                if (ev[baseKey].type !== 'half') ev[baseKey] = { type: 'half', am: null, pm: null };
+                if (isAm) ev[baseKey].am = { causeId: r.cause_id, comment: parsed.c };
+                if (isPm) ev[baseKey].pm = { causeId: r.cause_id, comment: parsed.c };
+            }
           }
-        }
+        });
+      }
+      
+      Object.keys(ev).forEach(function(k){
+          if(ev[k].type === 'empty' || (ev[k].type === 'half' && !ev[k].am && !ev[k].pm)) delete ev[k];
       });
-    }
-    
-    Object.keys(ev).forEach(function(k){
-        if(ev[k].type === 'empty' || (ev[k].type === 'half' && !ev[k].am && !ev[k].pm)) delete ev[k];
-    });
 
-    setSS("ok");
-    return {events:ev, personnels:loadedPers, causes:loadedCauses, services:loadedSvc, groupes:loadedGrp};
-  }).catch(function(e){console.error("Load:",e);setSS("err");return null;});
+      setSS("ok");
+      return {events:ev, personnels:loadedPers, causes:loadedCauses, services:loadedSvc, groupes:loadedGrp};
+  } catch (e) {
+      setSS("err");
+      return null;
+  }
 }
 
-function saveConfig(){
-  if(!checkGasUrl()) return Promise.reject("URL non configurée");
+async function saveConfig(){
+  if(!checkGasUrl()) return;
   setSS("spin");
   var p1 = {id: "__personnels__", cause_id: 0, comment: JSON.stringify(ST.personnels)};
   var p2 = {id: "__causes__", cause_id: 0, comment: JSON.stringify(ST.causes)};
   var p3 = {id: "__services__", cause_id: 0, comment: JSON.stringify(ST.services)};
   var p4 = {id: "__groupes__", cause_id: 0, comment: JSON.stringify(ST.groupes)};
   
-  return fetch(GAS_URL, {
-      method: 'POST',
-      body: JSON.stringify({action: 'upsert', payload: [p1, p2, p3, p4]}),
-      headers: {'Content-Type': 'text/plain;charset=utf-8'}
-  }).then(function(r){ 
-      if(!r.ok) throw new Error("Erreur réseau");
-      setSS("ok"); 
-  }).catch(function(e){console.error("SaveConfig:",e);setSS("err");});
+  try {
+      await sbFetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify({action: 'upsert', payload: [p1, p2, p3, p4]}),
+          headers: {'Content-Type': 'text/plain;charset=utf-8'}
+      });
+      setSS("ok");
+  } catch(e) {
+      setSS("err");
+  }
 }
 
-function saveEvsDB(upserts, deletes){
-  if(!checkGasUrl()) return Promise.reject("URL non configurée");
+async function saveEvsDB(upserts, deletes){
+  if(!checkGasUrl()) return;
   setSS("spin");
-  var p1 = null, p2 = null;
   
-  if(upserts && upserts.length > 0) {
-      p1 = fetch(GAS_URL, {
-          method: 'POST',
-          body: JSON.stringify({action: 'upsert', payload: upserts}),
-          headers: {'Content-Type': 'text/plain;charset=utf-8'}
-      });
+  try {
+      let p1 = null, p2 = null;
+      if(upserts && upserts.length > 0) {
+          p1 = sbFetch(GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({action: 'upsert', payload: upserts}),
+              headers: {'Content-Type': 'text/plain;charset=utf-8'}
+          });
+      }
+      if(deletes && deletes.length > 0) {
+          p2 = sbFetch(GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({action: 'delete', ids: deletes}),
+              headers: {'Content-Type': 'text/plain;charset=utf-8'}
+          });
+      }
+      await Promise.all([p1, p2].filter(p => p !== null));
+      setSS("ok");
+  } catch(e) {
+      setSS("err");
+      showToast("Erreur sauvegarde", 1);
   }
-  
-  if(deletes && deletes.length > 0) {
-      p2 = fetch(GAS_URL, {
-          method: 'POST',
-          body: JSON.stringify({action: 'delete', ids: deletes}),
-          headers: {'Content-Type': 'text/plain;charset=utf-8'}
-      });
-  }
-  
-  return Promise.all([p1, p2]).then(function(){setSS("ok");}).catch(function(e){console.error("SaveDB:",e);setSS("err");showToast("Erreur sauvegarde",1);});
 }
 
 function setSS(s){
@@ -1087,10 +1107,18 @@ function applyCellVisuals(ec, ev) {
         ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
         if(ev.comment && ev.comment.trim() && ev.comment!=="Import Excel"){ ec.innerHTML += '<span class="ev-dot"></span>'; }
     } else if (ev.type === 'half') {
+        var amIsAst = ev.am && cLabel(ev.am.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
+        var pmIsAst = ev.pm && cLabel(ev.pm.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
+        var isHoriz = amIsAst || pmIsAst;
+        
         var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
         var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
         
-        ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
+        if (isHoriz) {
+            ec.style.backgroundImage = 'linear-gradient(to bottom, '+amCol+' 50%, '+pmCol+' 50%)';
+        } else {
+            ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
+        }
         
         var title = "";
         var hasCmt = false;
@@ -1107,12 +1135,18 @@ function applyCellVisuals(ec, ev) {
         
         ec.title = title;
         
-        var lbls = [];
-        if(ev.am) lbls.push(cShort(ev.am.causeId));
-        if(ev.pm) lbls.push(cShort(ev.pm.causeId));
-        var fs = lbls.length > 1 ? "10px" : "12px";
-        var ls = lbls.length > 1 ? "-0.5px" : "normal";
-        ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
+        if (isHoriz) {
+            var topLbl = ev.am ? cShort(ev.am.causeId) : '';
+            var botLbl = ev.pm ? cShort(ev.pm.causeId) : '';
+            ec.innerHTML = '<div style="display:flex; flex-direction:column; height:100%; width:100%; justify-content:space-evenly; align-items:center; font-size:10px; font-weight:900; color:white; text-shadow:0 1px 2px rgba(0,0,0,0.8); line-height:1; z-index:2;"><span>'+topLbl+'</span><span>'+botLbl+'</span></div>';
+        } else {
+            var lbls = [];
+            if(ev.am) lbls.push(cShort(ev.am.causeId));
+            if(ev.pm) lbls.push(cShort(ev.pm.causeId));
+            var fs = lbls.length > 1 ? "10px" : "12px";
+            var ls = lbls.length > 1 ? "-0.5px" : "normal";
+            ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
+        }
         if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
     }
 }
@@ -1140,7 +1174,16 @@ function renderApp(){
   var activeElId = document.activeElement ? document.activeElement.id : null;
   var selStart = document.activeElement ? document.activeElement.selectionStart : null;
   
-  ST.ignoreScroll = true; // Lock scroll updates BEFORE destroying DOM
+  var gcElemBefore = document.querySelector(".gc") || document.querySelector(".cal-wrapper");
+  var savedX = ST.lastScrollX || 0;
+  var savedY = ST.lastScrollY || 0;
+  if(gcElemBefore) {
+      savedX = gcElemBefore.scrollLeft;
+      savedY = gcElemBefore.scrollTop;
+      ST.lastScrollX = savedX;
+      ST.lastScrollY = savedY;
+      ST.ignoreScroll = true; // Lock scroll updates BEFORE destroying DOM
+  }
 
   var app=document.getElementById("app");
   app.innerHTML="";
@@ -1463,7 +1506,7 @@ function rCalendrier() {
   if (!ST.calPid) {
      gc.innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; color:var(--tx3); font-size:16px;">Veuillez sélectionner un employé ci-dessus.</div>';
   } else {
-     var p = ST.personnels.find(function(x){ return x.id === parseInt(ST.calPid); });
+     var p = ST.personnels.find(function(x){ return String(x.id) === String(ST.calPid); });
      if(!p) {
          ST.calPid = "";
          return rCalendrier(); 
@@ -1920,14 +1963,14 @@ function rPersonnel(){
 function rParametres(){
   var div=document.createElement("div");div.className="tc";
   var sh=document.createElement("div");sh.className="sh";
-  sh.innerHTML='<h2>Paramétrages</h2><button class="btn p" id="addC">+ Ajouter une cause</button>';
+  sh.innerHTML='<h2>Paramétrages</h2>';
   div.appendChild(sh);
   
   var pg=document.createElement("div");pg.className="pg";
   
   // -- CAUSES --
   var c1=document.createElement("div");c1.className="pc";
-  c1.innerHTML="<h3>Causes configurées</h3>";
+  c1.innerHTML='<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--bd1); padding-bottom:12px;"><h3 style="margin:0; border:none; padding:0;">Causes configurées</h3><button class="btn p" id="addC" style="padding:4px 10px; font-size:12px;">+ Ajouter</button></div>';
   var tblC = document.createElement("div"); tblC.style.display="flex"; tblC.style.flexDirection="column"; tblC.style.gap="8px";
   for(var i=0;i<ST.causes.length;i++){
     var c=ST.causes[i];
@@ -1991,6 +2034,58 @@ function rParametres(){
   div.appendChild(pg);return div;
 }
 
+// === DELEGATION D'EVENEMENTS GLOBAUX (Ultra-Robuste) ===
+document.addEventListener("click", function(e) {
+    // --- PERSONNEL ---
+    if (e.target.closest('#addP')) { ST.eModal = {}; renderModals(); return; }
+    
+    var btnEp = e.target.closest('.eb[data-ep]');
+    if (btnEp) { ST.eModal = { pid: String(btnEp.getAttribute("data-ep")) }; renderModals(); return; }
+
+    // --- PARAMETRES : CAUSES ---
+    if (e.target.closest('#addC')) { ST.pModal = {}; renderModals(); return; }
+    
+    var btnEc = e.target.closest('.eb[data-ec]');
+    if (btnEc) {
+        var id = parseInt(btnEc.getAttribute("data-ec"));
+        for(var j=0; j<ST.causes.length; j++){
+            if(ST.causes[j].id === id){ ST.pModal = Object.assign({}, ST.causes[j]); renderModals(); break; }
+        }
+        return;
+    }
+
+    // --- PARAMETRES : SERVICES ---
+    if (e.target.closest('#addSvcBtn')) {
+        var valSvc = document.getElementById("newSvc").value.trim();
+        if(valSvc && ST.services.indexOf(valSvc) === -1){ ST.services.push(valSvc); ST.services.sort(); saveConfig(); renderApp(); }
+        return;
+    }
+    var btnEditSvc = e.target.closest('.edit-svc');
+    if (btnEditSvc) { ST.svcModal = { oldVal: btnEditSvc.getAttribute("data-editsvc") }; renderModals(); return; }
+    
+    var btnDelSvc = e.target.closest('.del-svc');
+    if (btnDelSvc) {
+        var valSvcDel = btnDelSvc.getAttribute("data-svc");
+        ST.services = ST.services.filter(function(s){return s !== valSvcDel;}); saveConfig(); renderApp(); return;
+    }
+
+    // --- PARAMETRES : GROUPES ---
+    if (e.target.closest('#addGrpBtn')) {
+        var valGrp = document.getElementById("newGrp").value.trim();
+        if(valGrp && ST.groupes.indexOf(valGrp) === -1){ ST.groupes.push(valGrp); ST.groupes.sort(); saveConfig(); renderApp(); }
+        return;
+    }
+    var btnEditGrp = e.target.closest('.edit-grp');
+    if (btnEditGrp) { ST.grpModal = { oldVal: btnEditGrp.getAttribute("data-editgrp") }; renderModals(); return; }
+    
+    var btnDelGrp = e.target.closest('.del-grp');
+    if (btnDelGrp) {
+        var valDelGrp = btnDelGrp.getAttribute("data-grp");
+        ST.groupes = ST.groupes.filter(function(g){return g !== valDelGrp;}); saveConfig(); renderApp(); return;
+    }
+});
+
+
 // === EVENEMENTS APP PRINCIPALE ===
 function bindAppEvents(){
   var navTabs=document.querySelectorAll(".nav-tab");
@@ -2035,7 +2130,7 @@ function bindAppEvents(){
       });
   }
 
-  // ScrollSpy et Navigation Mois
+  // ScrollSpy et Navigation Mois (Uniquement vue planning global)
   var mbs=document.querySelectorAll(".month-btn");
   for(var i=0;i<mbs.length;i++){(function(b){
       b.addEventListener("click",function(e){
@@ -2171,35 +2266,81 @@ function bindAppEvents(){
              } else {
                  var targetPeriod = ST.selectedPeriod;
                  
-                 // SAISIE NORMALE (Avec blocage anti-écrasement)
+                 // LOGIQUE ASTREINTE : Force sur "Matin" (am) pour libérer le bas
+                 var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
+                 var isAstreinte = false;
+                 if(causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
+                     isAstreinte = true;
+                     targetPeriod = 'am'; // FORCE TOUJOURS L'ASTREINTE EN HAUT
+                 }
+                 
+                 // --- NOUVELLE LOGIQUE TOLÉRANCE ASTREINTE ---
                  var conflict = false;
-                 if (targetPeriod === 'full') {
-                     if (existing) conflict = true;
-                 } else if (targetPeriod === 'am') {
-                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
-                 } else if (targetPeriod === 'pm') {
-                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
+                 var bypassSpecial = false;
+
+                 // Cas 1 : On ajoute Astreinte sur une case Pleine (full) existante
+                 if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
+                     var oldCause = existing.causeId;
+                     var oldCmt = existing.comment;
+                     ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
+                     upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
+                     upserts.push({id: baseKey+'-pm', cause_id: oldCause, comment: oldCmt});
+                     deletes.push(baseKey);
+                     bypassSpecial = true;
+                 }
+                 // Cas 2 : On ajoute un motif Plein (full) sur une demi-case existante avec Astreinte en haut
+                 else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
+                     var exAmAst = false, exPmAst = false;
+                     if(existing.am) {
+                         var cObj1 = ST.causes.find(function(c){return c.id === existing.am.causeId;});
+                         if(cObj1 && cObj1.label.toUpperCase().indexOf('ASTREINTE') > -1) exAmAst = true;
+                     }
+                     if(existing.pm) {
+                         var cObj2 = ST.causes.find(function(c){return c.id === existing.pm.causeId;});
+                         if(cObj2 && cObj2.label.toUpperCase().indexOf('ASTREINTE') > -1) exPmAst = true;
+                     }
+                     
+                     if (exAmAst && !existing.pm) {
+                         ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
+                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
+                         bypassSpecial = true;
+                     } else if (exPmAst && !existing.am) {
+                         ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
+                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
+                         bypassSpecial = true;
+                     }
                  }
 
-                 if (conflict) {
-                     showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
-                     return; 
-                 }
+                 if (!bypassSpecial) {
+                     // SAISIE NORMALE (Avec blocage anti-écrasement)
+                     if (targetPeriod === 'full') {
+                         if (existing) conflict = true;
+                     } else if (targetPeriod === 'am') {
+                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
+                     } else if (targetPeriod === 'pm') {
+                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
+                     }
 
-                 if (targetPeriod === 'full') {
+                     if (conflict) {
+                         showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
+                         return; 
+                     }
+
+                     if (targetPeriod === 'full') {
                          ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
                          upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
                          deletes.push(baseKey+'-am', baseKey+'-pm');
-                 } else if (targetPeriod === 'am') {
+                     } else if (targetPeriod === 'am') {
                          if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
                          ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
                          upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
                          if(existing && existing.pm) deletes.push(baseKey);
-                 } else if (targetPeriod === 'pm') {
+                     } else if (targetPeriod === 'pm') {
                          if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
                          ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
                          upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
                          if(existing && existing.am) deletes.push(baseKey);
+                     }
                  }
              }
              
@@ -2220,6 +2361,55 @@ function bindAppEvents(){
         if(pid&&day){ST.modal={pid:pid,day:day,month:mo,key:key};renderModals();}
     });
   })(ecs[i]);}
+
+  // EXPORT EXCEL GLOBAL
+  var btnExportGlobalXlsx = document.getElementById("btnExportGlobalXlsx");
+  if(btnExportGlobalXlsx) {
+      btnExportGlobalXlsx.addEventListener("click", function() {
+          if(typeof XLSX === 'undefined') { showToast("Veuillez patienter, chargement de l'outil d'export...", true); return; }
+          var data = [["Date", "Employé", "Service", "Groupe", "Cause", "Période", "Commentaire"]];
+          var keys = Object.keys(ST.events);
+          keys.sort(function(a,b) {
+              var pA = a.split('-'), pB = b.split('-');
+              var dtA = new Date(pA[1], pA[2], pA[3]).getTime(), dtB = new Date(pB[1], pB[2], pB[3]).getTime();
+              return dtA - dtB;
+          });
+          for(var i=0; i<keys.length; i++) {
+              var k = keys[i];
+              if(k === "__personnels__") continue;
+              var ev = ST.events[k], parts = k.split('-'); 
+              if(parts.length < 4) continue;
+              var pid = parseInt(parts[0]);
+              var p = ST.personnels.find(function(x){ return x.id === pid; });
+              if(!p) continue;
+              var dateStr = p2(parts[3]) + "/" + p2(parseInt(parts[2])+1) + "/" + parts[1];
+              if(ev.type === 'full') {
+                  data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.causeId), 'Jour entier', ev.comment==="Import Excel"?"":ev.comment||""]);
+              } else if(ev.type === 'half') {
+                  if(ev.am) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.am.causeId), 'Matin', ev.am.comment==="Import Excel"?"":ev.am.comment||""]);
+                  if(ev.pm) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.pm.causeId), 'Après-midi', ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]);
+              }
+          }
+          var ws = XLSX.utils.aoa_to_sheet(data);
+          var wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Absences");
+          XLSX.writeFile(wb, "Planning_Absences_Usine_" + ST.year + ".xlsx");
+          showToast("Export XLSX réussi");
+      });
+  }
+
+  // IMPORT EXCEL
+  var btnImportExcel = document.getElementById("btnImportExcel");
+  var excelImportFile = document.getElementById("excelImportFile");
+  if(btnImportExcel && excelImportFile) {
+      btnImportExcel.addEventListener("click", function() {
+          if(!excelImportFile.files || !excelImportFile.files[0]) { showToast("Veuillez sélectionner un fichier Excel", true); return; }
+          var file = excelImportFile.files[0];
+          var reader = new FileReader();
+          reader.onload = function(e) { processExcelImport(e.target.result); };
+          reader.readAsArrayBuffer(file);
+      });
+  }
 }
 
 // === EVENEMENTS DES MODALES (Séparé pour ne pas casser le scroll) ===
@@ -2241,6 +2431,16 @@ function bindModalEvents() {
     var cid_pm = parseInt(document.getElementById("mC_pm").value) || null;
     var cm_pm = document.getElementById("mCm_pm").value.trim();
     var key = ST.modal.key;
+    
+    // Auto-swap si Astreinte a été mise dans l'après-midi par erreur dans la fenêtre
+    if (cid_pm) {
+        var cPmObj = ST.causes.find(function(c){return c.id === cid_pm;});
+        if (cPmObj && cPmObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
+            var tC = cid_am, tCm = cm_am;
+            cid_am = cid_pm; cm_am = cm_pm;
+            cid_pm = tC; cm_pm = tCm;
+        }
+    }
 
     var upserts = [], deletes = [];
     
@@ -2384,7 +2584,7 @@ if(checkGasUrl()) {
       
       showToast("Planning synchronisé");
     }).catch(function(e){
-      console.error("Google Sheets Error:",e);
+      console.warn("Base de données inaccessible, passage en mode hors ligne.");
       ST.loaded = true;
       renderApp();
       
@@ -2394,7 +2594,7 @@ if(checkGasUrl()) {
           ST.initialScrollDone = true;
       }
       
-      showToast("Mode hors ligne ou Erreur URL", true);
+      showToast("Mode hors ligne activé", true);
     });
 
     setInterval(function(){
