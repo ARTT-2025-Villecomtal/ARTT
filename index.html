@@ -131,8 +131,8 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 
 /* === CALENDRIER PERSONNEL === */
 .cal-wrapper { flex:1; overflow:auto; background:var(--bg3); padding:8px 16px; scroll-behavior: smooth; min-height:0; }
-.cal-grid { display:flex; gap:8px; min-width:max-content; height:100%; padding-bottom:8px; }
-.cal-col { width:130px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; height:100%; }
+.cal-grid { display:flex; gap:8px; min-width:1000px; width:100%; height:100%; padding-bottom:8px; }
+.cal-col { flex:1; min-width:80px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; height:100%; }
 .cal-month-name { background:var(--bg2); color:var(--primary); text-align:center; padding:6px 0; font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:1px; position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd2); flex-shrink:0; }
 .cal-row { display:flex; border-bottom:1px solid var(--bd2); flex:1; min-height:16px; box-sizing:border-box; overflow:hidden; }
 .cal-row.empty { background:var(--bg2); border-bottom:none; flex:1; min-height:16px; }
@@ -286,8 +286,8 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
     .pc { padding: 15px; }
 
     /* Mobile Calendar Specifics */
-    .cal-grid { gap:6px; }
-    .cal-col { width: 110px; }
+    .cal-grid { gap:6px; min-width: max-content; }
+    .cal-col { flex: 0 0 110px; }
     .cal-lbl { font-size: 9px; width: 26px; }
 }
 </style>
@@ -638,6 +638,8 @@ function processExcelImport(arrayBuffer) {
             return str;
         }
         
+        var newEvents = {}; // On stocke le nouvel import temporairement
+
         for(var r = R_days + 1; r <= range.e.r; r++) {
             var empId = null;
             var cellNameFound = "";
@@ -711,13 +713,12 @@ function processExcelImport(arrayBuffer) {
                      }
 
                      comment = fixEncoding(comment);
-                     
                      if (!comment) comment = "Import Excel";
                      
                      var baseKey = eKey(empId, dateObj.y, dateObj.m, dateObj.d);
                      
-                     if(!ST.events[baseKey]) ST.events[baseKey] = {type:'empty'};
-                     ST.events[baseKey] = {type:'full', causeId:causeId, comment:comment};
+                     if(!newEvents[baseKey]) newEvents[baseKey] = {type:'empty'};
+                     newEvents[baseKey] = {type:'full', causeId:causeId, comment:comment};
                      
                      eventsToPush.push({id: baseKey, cause_id: causeId, comment: comment});
                      count++;
@@ -728,22 +729,63 @@ function processExcelImport(arrayBuffer) {
             }
         }
         
-        if(eventsToPush.length === 0) {
-            if(log) log.innerHTML = "<span style='color:#F97316'>Aucune donnée lue.</span>";
+        // === EFFACEMENT PREALABLE ===
+        var oldDbIdsToDelete = [];
+        Object.keys(ST.events).forEach(function(k) {
+            var ev = ST.events[k];
+            if(ev.type === 'full') oldDbIdsToDelete.push(k);
+            else if (ev.type === 'half') {
+                if(ev.am) oldDbIdsToDelete.push(k+'-am');
+                if(ev.pm) oldDbIdsToDelete.push(k+'-pm');
+            }
+        });
+
+        if(eventsToPush.length === 0 && oldDbIdsToDelete.length === 0) {
+            if(log) log.innerHTML = "<span style='color:#F97316'>Aucune donnée à importer.</span>";
             return;
         }
-        
-        if(log) log.textContent = count + " absences lues. Base de données en cours...";
-        
-        batchSend(eventsToPush, 0, function() {
-            var logHtml = "<span style='color:var(--primary)'>✅ Import terminé avec succès ! ("+count+" absences ajoutées)</span>";
-            if(unrecognized.length > 0) {
-                logHtml += "<br><span style='color:#F97316; font-size:11px'>Lignes ignorées (noms introuvables) : " + unrecognized.join(', ') + "</span>";
+
+        if(log) log.textContent = "Effacement de l'ancien planning et import en cours (" + count + " absences)...";
+
+        // Remplacement immédiat dans l'interface
+        ST.events = newEvents;
+
+        function startUpsert() {
+            if (eventsToPush.length === 0) {
+                if(log) log.innerHTML = "<span style='color:var(--primary)'>✅ Ancien planning effacé.</span>";
+                renderApp();
+                return;
             }
-            if(log) log.innerHTML = logHtml;
-            renderApp();
-            showToast(count + " absences importées");
-        });
+            batchSend(eventsToPush, 0, function() {
+                var logHtml = "<span style='color:var(--primary)'>✅ Import terminé avec succès ! ("+count+" absences ajoutées)</span>";
+                if(unrecognized.length > 0) {
+                    logHtml += "<br><span style='color:#F97316; font-size:11px'>Lignes ignorées (noms introuvables) : " + unrecognized.join(', ') + "</span>";
+                }
+                if(log) log.innerHTML = logHtml;
+                renderApp();
+                showToast(count + " absences importées");
+            });
+        }
+
+        // Si on a des anciennes données à effacer dans le Sheets
+        if (oldDbIdsToDelete.length > 0) {
+            function batchDelete(ids, idx, cb) {
+                var chunk = ids.slice(idx, idx + 500);
+                if(chunk.length === 0) { cb(); return; }
+                fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({action: 'delete', ids: chunk}),
+                    headers: {'Content-Type': 'text/plain;charset=utf-8'}
+                }).then(function(){
+                    batchDelete(ids, idx + 500, cb);
+                }).catch(function(){
+                    batchDelete(ids, idx + 500, cb);
+                });
+            }
+            batchDelete(oldDbIdsToDelete, 0, startUpsert);
+        } else {
+            startUpsert();
+        }
         
     } catch(err) {
         console.error(err);
@@ -912,11 +954,12 @@ function isoWk(y,m,d){
   return 1+Math.round(((dt-w1)/86400000-3+(w1.getDay()+6)%7)/7);
 }
 
-function filtP(){
+function filtP(includeInactive){
   var res=[];
   var searchLower = ST.fSearch.toLowerCase();
   for(var i=0;i<ST.personnels.length;i++){
     var p=ST.personnels[i];
+    if(!includeInactive && p.inactive) continue;
     if(ST.fSvc&&p.service!==ST.fSvc)continue;
     if(ST.fGrp&&p.groupe!==ST.fGrp)continue;
     if(ST.fSearch && p.nom.toLowerCase().indexOf(searchLower) === -1) continue; 
@@ -927,8 +970,11 @@ function filtP(){
 }
 
 function getCalPidOpts() {
-    var res = ST.personnels;
-    if(ST.calSvc) res = res.filter(function(p){ return p.service === ST.calSvc; });
+    var res = ST.personnels.filter(function(p){
+        if(p.inactive) return false;
+        if(ST.calSvc && p.service !== ST.calSvc) return false;
+        return true;
+    });
     res.sort(function(a,b){ return a.nom.localeCompare(b.nom); });
     var html = "";
     for(var i=0; i<res.length; i++) {
@@ -1769,11 +1815,14 @@ function rEModal(){
   for(var i=0;i<ST.services.length;i++){ svcOpts += '<option value="'+ST.services[i]+'">'; }
   var grpOpts = '';
   for(var i=0;i<ST.groupes.length;i++){ grpOpts += '<option value="'+ST.groupes[i]+'">'; }
+
+  var isInactive = p.inactive ? 'checked' : '';
   
   m.innerHTML='<h3>'+(isNew?"Ajouter un employé":"Modifier l'employé")+'</h3>'
     +'<div class="mr"><label>Nom complet</label><input id="eNom" value="'+(p.nom||"")+'" placeholder="Ex: DUPONT Jean"></div>'
     +'<div class="mr"><label>Service</label><input id="eSvc" list="listSvc" value="'+(p.service||"")+'" placeholder="Sélectionner ou taper un nouveau..."><datalist id="listSvc">'+svcOpts+'</datalist></div>'
     +'<div class="mr"><label>Groupe</label><input id="eGrp" list="listGrp" value="'+(p.groupe||"")+'" placeholder="Sélectionner ou taper un nouveau..."><datalist id="listGrp">'+grpOpts+'</datalist></div>'
+    +'<div class="mr" style="display:flex; align-items:center; gap:10px;"><input type="checkbox" id="eInactive" style="width:auto; transform:scale(1.2);" '+isInactive+'><label style="margin:0; cursor:pointer;" for="eInactive">Employé inactif (masqué du planning)</label></div>'
     +'<div class="mbtns">'+(isNew?"":'<button class="btn d" id="dPer">Supprimer</button>')
     +'<button class="btn" id="cEd">Annuler</button><button class="btn p" id="sEd">Enregistrer</button></div>';
   ov.appendChild(m);return ov;
@@ -1795,7 +1844,7 @@ function rPModal(){
 
 function rPersonnel(){
   var div=document.createElement('div');div.className='tc';
-  var ps = filtP(); 
+  var ps = filtP(true); 
   
   var sh=document.createElement('div');sh.className='sh';
   sh.innerHTML='<h2>Employés ('+ps.length+')</h2>'
@@ -1809,7 +1858,7 @@ function rPersonnel(){
   var tbl=document.createElement('table');tbl.className='tbl';
   var thead=document.createElement('thead');
   var hrow=document.createElement('tr');
-  ['Nom','Service','Groupe','Actions'].forEach(function(t){var th=document.createElement('th');th.textContent=t;hrow.appendChild(th);});
+  ['Nom','Service','Groupe','Statut','Actions'].forEach(function(t){var th=document.createElement('th');th.textContent=t;hrow.appendChild(th);});
   thead.appendChild(hrow);tbl.appendChild(thead);
   
   var tb=document.createElement('tbody');
@@ -1825,8 +1874,16 @@ function rPersonnel(){
     td3.appendChild(span);tr.appendChild(td3);
     
     var td4=document.createElement('td');
+    if(p.inactive) {
+       td4.innerHTML = '<span style="background:#fce7f3; color:#db2777; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Inactif</span>';
+    } else {
+       td4.innerHTML = '<span style="background:#dcfce7; color:#166534; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Actif</span>';
+    }
+    tr.appendChild(td4);
+
+    var td5=document.createElement('td');
     var eb=document.createElement('button');eb.className='eb';eb.setAttribute('data-ep',p.id);eb.textContent='Modifier';
-    td4.appendChild(eb);tr.appendChild(td4);
+    td5.appendChild(eb);tr.appendChild(td5);
     tb.appendChild(tr);
   }
   tbl.appendChild(tb);div.appendChild(tbl);return div;
@@ -1850,6 +1907,7 @@ function rParametres(){
     pi.innerHTML='<div class="cdot" style="background:'+c.color+'"></div><span class="pil">'+c.label+'</span><span class="pn">'+c.id+'</span>';
     c1.appendChild(pi);
   }
+  c1.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Créez autant de causes que vous souhaitez pour le planning.</i></p>';
   pg.appendChild(c1);
   
   // -- SERVICES --
@@ -1884,7 +1942,7 @@ function rParametres(){
   // -- IMPORT EXCEL --
   var c3=document.createElement("div");c3.className="pc";c3.style.gridColumn="1 / -1";
   c3.innerHTML=`<h3>📥 Importer un fichier Excel (.xlsx)</h3>
-  <p style="font-size:12px;color:var(--tx2);margin-bottom:12px;line-height:1.5;">L'importation écrase et crée les absences en "Journée entière" et récupère les commentaires (en réparant les accents). La détection du personnel est floue et résistante aux fautes de frappe.</p>
+  <p style="font-size:12px;color:var(--tx2);margin-bottom:12px;line-height:1.5;">Attention : L'importation effacera <b>toutes les absences actuellement affichées</b> pour les remplacer par celles du fichier. Les commentaires seront récupérés et leurs accents réparés si besoin.</p>
   <div style="display:flex;gap:10px;align-items:center">
     <input type="file" id="excelImportFile" accept=".xlsx, .xls" style="flex:1;padding:8px;border:1px dashed var(--bd2);border-radius:var(--r1);background:var(--bg2)">
     <button class="btn p" id="btnImportExcel" style="background:#F97316; border-color:#F97316;">Lancer l'import</button>
@@ -2068,81 +2126,35 @@ function bindAppEvents(){
              } else {
                  var targetPeriod = ST.selectedPeriod;
                  
-                 // LOGIQUE ASTREINTE : Force sur "Matin" (am) pour libérer le bas
-                 var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
-                 var isAstreinte = false;
-                 if(causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
-                     isAstreinte = true;
-                     targetPeriod = 'am'; // FORCE TOUJOURS L'ASTREINTE EN HAUT
-                 }
-                 
-                 // --- NOUVELLE LOGIQUE TOLÉRANCE ASTREINTE ---
+                 // SAISIE NORMALE (Avec blocage anti-écrasement)
                  var conflict = false;
-                 var bypassSpecial = false;
-
-                 // Cas 1 : On ajoute Astreinte sur une case Pleine (full) existante
-                 if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
-                     var oldCause = existing.causeId;
-                     var oldCmt = existing.comment;
-                     ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
-                     upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                     upserts.push({id: baseKey+'-pm', cause_id: oldCause, comment: oldCmt});
-                     deletes.push(baseKey);
-                     bypassSpecial = true;
-                 }
-                 // Cas 2 : On ajoute un motif Plein (full) sur une demi-case existante avec Astreinte en haut
-                 else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
-                     var exAmAst = false, exPmAst = false;
-                     if(existing.am) {
-                         var cObj1 = ST.causes.find(function(c){return c.id === existing.am.causeId;});
-                         if(cObj1 && cObj1.label.toUpperCase().indexOf('ASTREINTE') > -1) exAmAst = true;
-                     }
-                     if(existing.pm) {
-                         var cObj2 = ST.causes.find(function(c){return c.id === existing.pm.causeId;});
-                         if(cObj2 && cObj2.label.toUpperCase().indexOf('ASTREINTE') > -1) exPmAst = true;
-                     }
-                     
-                     if (exAmAst && !existing.pm) {
-                         ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
-                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                         bypassSpecial = true;
-                     } else if (exPmAst && !existing.am) {
-                         ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
-                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                         bypassSpecial = true;
-                     }
+                 if (targetPeriod === 'full') {
+                     if (existing) conflict = true;
+                 } else if (targetPeriod === 'am') {
+                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
+                 } else if (targetPeriod === 'pm') {
+                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
                  }
 
-                 if (!bypassSpecial) {
-                     // SAISIE NORMALE (Avec blocage anti-écrasement)
-                     if (targetPeriod === 'full') {
-                         if (existing) conflict = true;
-                     } else if (targetPeriod === 'am') {
-                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
-                     } else if (targetPeriod === 'pm') {
-                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
-                     }
+                 if (conflict) {
+                     showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
+                     return; 
+                 }
 
-                     if (conflict) {
-                         showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
-                         return; 
-                     }
-
-                     if (targetPeriod === 'full') {
+                 if (targetPeriod === 'full') {
                          ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
                          upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
                          deletes.push(baseKey+'-am', baseKey+'-pm');
-                     } else if (targetPeriod === 'am') {
+                 } else if (targetPeriod === 'am') {
                          if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
                          ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
                          upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
                          if(existing && existing.pm) deletes.push(baseKey);
-                     } else if (targetPeriod === 'pm') {
+                 } else if (targetPeriod === 'pm') {
                          if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
                          ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
                          upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
                          if(existing && existing.am) deletes.push(baseKey);
-                     }
                  }
              }
              
@@ -2163,94 +2175,6 @@ function bindAppEvents(){
         if(pid&&day){ST.modal={pid:pid,day:day,month:mo,key:key};renderModals();}
     });
   })(ecs[i]);}
-  
-  // Boutons Personnel
-  var addP=document.getElementById("addP");
-  if(addP)addP.addEventListener("click",function(){ST.eModal={};renderModals();});
-  var epBtns=document.querySelectorAll("[data-ep]");
-  for(var i=0;i<epBtns.length;i++){(function(b){b.addEventListener("click",function(){ST.eModal={pid:parseInt(b.getAttribute("data-ep"))};renderModals();});})(epBtns[i]);}
-  
-  // Boutons Paramètres (Causes)
-  var addC=document.getElementById("addC");
-  if(addC)addC.addEventListener("click",function(){ST.pModal={};renderModals();});
-  var ecBtns=document.querySelectorAll("[data-ec]");
-  for(var i=0;i<ecBtns.length;i++){(function(el){el.addEventListener("click",function(){
-    var id=parseInt(el.getAttribute("data-ec"));
-    for(var j=0;j<ST.causes.length;j++){if(ST.causes[j].id===id){ST.pModal=Object.assign({},ST.causes[j]);renderModals();break;}}
-  });})(ecBtns[i]);}
-
-  // Boutons Paramètres (Services)
-  var addSvcBtn=document.getElementById("addSvcBtn");
-  if(addSvcBtn) addSvcBtn.addEventListener("click", function(){
-      var val=document.getElementById("newSvc").value.trim();
-      if(val && ST.services.indexOf(val)===-1){ ST.services.push(val); ST.services.sort(); saveConfig(); renderApp(); }
-  });
-  var delSvcBtns=document.querySelectorAll(".del-svc");
-  for(var i=0;i<delSvcBtns.length;i++){(function(b){b.addEventListener("click",function(e){
-      var v = e.currentTarget.getAttribute("data-svc");
-      ST.services = ST.services.filter(function(s){return s!==v;}); saveConfig(); renderApp();
-  });})(delSvcBtns[i]);}
-  
-  // Boutons Paramètres (Groupes)
-  var addGrpBtn=document.getElementById("addGrpBtn");
-  if(addGrpBtn) addGrpBtn.addEventListener("click", function(){
-      var val=document.getElementById("newGrp").value.trim();
-      if(val && ST.groupes.indexOf(val)===-1){ ST.groupes.push(val); ST.groupes.sort(); saveConfig(); renderApp(); }
-  });
-  var delGrpBtns=document.querySelectorAll(".del-grp");
-  for(var i=0;i<delGrpBtns.length;i++){(function(b){b.addEventListener("click",function(e){
-      var v = e.currentTarget.getAttribute("data-grp");
-      ST.groupes = ST.groupes.filter(function(g){return g!==v;}); saveConfig(); renderApp();
-  });})(delGrpBtns[i]);}
-
-  // EXPORT EXCEL GLOBAL
-  var btnExportGlobalXlsx = document.getElementById("btnExportGlobalXlsx");
-  if(btnExportGlobalXlsx) {
-      btnExportGlobalXlsx.addEventListener("click", function() {
-          if(typeof XLSX === 'undefined') { showToast("Veuillez patienter, chargement de l'outil d'export...", true); return; }
-          var data = [["Date", "Employé", "Service", "Groupe", "Cause", "Période", "Commentaire"]];
-          var keys = Object.keys(ST.events);
-          keys.sort(function(a,b) {
-              var pA = a.split('-'), pB = b.split('-');
-              var dtA = new Date(pA[1], pA[2], pA[3]).getTime(), dtB = new Date(pB[1], pB[2], pB[3]).getTime();
-              return dtA - dtB;
-          });
-          for(var i=0; i<keys.length; i++) {
-              var k = keys[i];
-              if(k === "__personnels__") continue;
-              var ev = ST.events[k], parts = k.split('-'); 
-              if(parts.length < 4) continue;
-              var pid = parseInt(parts[0]);
-              var p = ST.personnels.find(function(x){ return x.id === pid; });
-              if(!p) continue;
-              var dateStr = p2(parts[3]) + "/" + p2(parseInt(parts[2])+1) + "/" + parts[1];
-              if(ev.type === 'full') {
-                  data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.causeId), 'Jour entier', ev.comment==="Import Excel"?"":ev.comment||""]);
-              } else if(ev.type === 'half') {
-                  if(ev.am) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.am.causeId), 'Matin', ev.am.comment==="Import Excel"?"":ev.am.comment||""]);
-                  if(ev.pm) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.pm.causeId), 'Après-midi', ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]);
-              }
-          }
-          var ws = XLSX.utils.aoa_to_sheet(data);
-          var wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Absences");
-          XLSX.writeFile(wb, "Planning_Absences_Usine_" + ST.year + ".xlsx");
-          showToast("Export XLSX réussi");
-      });
-  }
-
-  // IMPORT EXCEL
-  var btnImportExcel = document.getElementById("btnImportExcel");
-  var excelImportFile = document.getElementById("excelImportFile");
-  if(btnImportExcel && excelImportFile) {
-      btnImportExcel.addEventListener("click", function() {
-          if(!excelImportFile.files || !excelImportFile.files[0]) { showToast("Veuillez sélectionner un fichier Excel", true); return; }
-          var file = excelImportFile.files[0];
-          var reader = new FileReader();
-          reader.onload = function(e) { processExcelImport(e.target.result); };
-          reader.readAsArrayBuffer(file);
-      });
-  }
 }
 
 // === EVENEMENTS DES MODALES (Séparé pour ne pas casser le scroll) ===
@@ -2272,16 +2196,6 @@ function bindModalEvents() {
     var cid_pm = parseInt(document.getElementById("mC_pm").value) || null;
     var cm_pm = document.getElementById("mCm_pm").value.trim();
     var key = ST.modal.key;
-    
-    // Auto-swap si Astreinte a été mise dans l'après-midi par erreur dans la fenêtre
-    if (cid_pm) {
-        var cPmObj = ST.causes.find(function(c){return c.id === cid_pm;});
-        if (cPmObj && cPmObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
-            var tC = cid_am, tCm = cm_am;
-            cid_am = cid_pm; cm_am = cm_pm;
-            cid_pm = tC; cm_pm = tCm;
-        }
-    }
 
     var upserts = [], deletes = [];
     
@@ -2314,14 +2228,21 @@ function bindModalEvents() {
     var nom=document.getElementById("eNom").value;
     var svc=document.getElementById("eSvc").value.trim();
     var grp=document.getElementById("eGrp").value.trim();
+    var inactive=document.getElementById("eInactive").checked;
     if(!nom)return;
     if(svc && ST.services.indexOf(svc) === -1) ST.services.push(svc);
     if(grp && ST.groupes.indexOf(grp) === -1) ST.groupes.push(grp);
     
     if(ST.eModal.pid){
-      for(var i=0;i<ST.personnels.length;i++){if(ST.personnels[i].id===ST.eModal.pid){ST.personnels[i].nom=nom;ST.personnels[i].service=svc;ST.personnels[i].groupe=grp;break;}}
+      for(var i=0;i<ST.personnels.length;i++){if(ST.personnels[i].id===ST.eModal.pid){
+          ST.personnels[i].nom=nom;
+          ST.personnels[i].service=svc;
+          ST.personnels[i].groupe=grp;
+          ST.personnels[i].inactive=inactive;
+          break;
+      }}
     }else{
-      ST.personnels.push({id:Date.now(),nom:nom,service:svc,groupe:grp});
+      ST.personnels.push({id:Date.now(),nom:nom,service:svc,groupe:grp,inactive:inactive});
     }
     ST.eModal=null; saveConfig(); renderApp();
   });
