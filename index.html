@@ -130,17 +130,19 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .ev-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:white;box-shadow:0 0 2px rgba(0,0,0,0.8); z-index:2;}
 
 /* === CALENDRIER PERSONNEL === */
-.cal-wrapper { flex:1; overflow:auto; background:var(--bg3); padding:16px; scroll-behavior: smooth; min-height:0; }
-.cal-grid { display:flex; gap:12px; min-width:max-content; padding-bottom:20px; }
-.cal-col { width:160px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 4px 6px rgba(0,0,0,0.05); }
-.cal-month-name { background:var(--bg2); color:var(--primary); text-align:center; padding:10px 0; font-weight:800; font-size:14px; text-transform:uppercase; letter-spacing:1px; position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd2); }
-.cal-row { display:flex; border-bottom:1px solid var(--bd2); height:32px; box-sizing:border-box; }
-.cal-row.empty { background:var(--bg2); border-bottom:none; }
-.cal-lbl { width:36px; flex-shrink:0; display:flex; justify-content:space-between; align-items:center; padding:0 6px; font-size:11px; font-weight:800; color:var(--tx2); background:var(--bg2); border-right:1px solid var(--bd2); box-sizing:border-box; }
+.cal-wrapper { flex:1; overflow:auto; background:var(--bg3); padding:8px 16px; scroll-behavior: smooth; min-height:0; }
+.cal-grid { display:flex; gap:8px; min-width:max-content; height:100%; padding-bottom:8px; }
+.cal-col { width:130px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; height:100%; }
+.cal-month-name { background:var(--bg2); color:var(--primary); text-align:center; padding:6px 0; font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:1px; position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd2); flex-shrink:0; }
+.cal-row { display:flex; border-bottom:1px solid var(--bd2); flex:1; min-height:16px; box-sizing:border-box; overflow:hidden; }
+.cal-row.empty { background:var(--bg2); border-bottom:none; flex:1; min-height:16px; }
+.cal-lbl { width:30px; flex-shrink:0; display:flex; justify-content:space-between; align-items:center; padding:0 4px; font-size:9px; font-weight:800; color:var(--tx2); background:var(--bg2); border-right:1px solid var(--bd2); box-sizing:border-box; }
 .cal-lbl.we { color:var(--tx3); opacity:0.8; }
 .cal-lbl.fe { background:#fde68a; color:#b45309; }
 .cal-lbl.td { background:var(--primary); color:white; }
-.cal-ec { flex:1; min-width:0; border-right:none !important; height:100% !important; min-height:0 !important; width:100% !important; border-bottom:none !important; max-width:none !important; padding:0 !important; }
+.cal-ec { flex:1; min-width:0; border-right:none !important; height:100% !important; min-height:0 !important; width:100% !important; border-bottom:none !important; max-width:none !important; padding:0 !important; display:flex; align-items:center; justify-content:center; }
+.cal-ec .ev-l { font-size:10px !important; }
+.cal-ec > div { font-size:9px !important; }
 
 /* === MODALES === */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:100;animation:fadeIn 0.2s}
@@ -284,9 +286,9 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
     .pc { padding: 15px; }
 
     /* Mobile Calendar Specifics */
-    .cal-grid { gap:8px; }
-    .cal-col { width: 120px; }
-    .cal-lbl { font-size: 10px; width: 28px; }
+    .cal-grid { gap:6px; }
+    .cal-col { width: 110px; }
+    .cal-lbl { font-size: 9px; width: 26px; }
 }
 </style>
 </head>
@@ -761,8 +763,13 @@ var CD=[
   {id:8,label:"Télétravail",color:"#14B8A6",short:"8"}
 ];
 
-var FERIES={"2026-01-01":1,"2026-04-06":1,"2026-05-01":1,"2026-05-08":1,"2026-05-14":1,"2026-05-25":1,"2026-07-14":1,"2026-08-15":1,"2026-11-01":1,"2026-11-11":1,"2026-12-25":1};
-var VACANCES=[["2026-02-07","2026-02-22"],["2026-04-11","2026-04-26"],["2026-07-04","2026-08-31"],["2026-10-17","2026-11-01"],["2026-12-19","2027-01-04"]];
+var VACANCES=[
+  ["2025-02-08","2025-02-23"],["2025-04-05","2025-04-21"],["2025-07-05","2025-08-31"],["2025-10-18","2025-11-02"],["2025-12-20","2026-01-04"],
+  ["2026-02-14","2026-03-01"],["2026-04-11","2026-04-26"],["2026-07-04","2026-08-31"],["2026-10-17","2026-11-01"],["2026-12-19","2027-01-03"],
+  ["2027-02-06","2027-02-21"],["2027-04-03","2027-04-18"],["2027-07-07","2027-08-31"],["2027-10-23","2027-11-07"],["2027-12-18","2028-01-02"],
+  ["2028-02-12","2028-02-27"],["2028-04-08","2028-04-23"],["2028-07-06","2028-08-31"],["2028-10-21","2028-11-05"],["2028-12-23","2029-01-07"],
+  ["2029-02-10","2029-02-25"],["2029-04-07","2029-04-22"],["2029-07-07","2029-08-31"],["2029-10-20","2029-11-04"],["2029-12-22","2030-01-06"]
+];
 
 var XLS={};
 
@@ -859,7 +866,35 @@ var ST={
 // --- Helpers de dates ---
 function p2(n){return String(n).padStart(2,"0");}
 function dStr(y,m,d){return y+"-"+p2(m+1)+"-"+p2(d);}
-function isFe(y,m,d){return !!FERIES[dStr(y,m,d)];}
+
+function isFe(y,m,d){
+  if(m===0 && d===1) return true; // Jour de l'An
+  if(m===4 && d===1) return true; // Fête du Travail
+  if(m===4 && d===8) return true; // Victoire 1945
+  if(m===6 && d===14) return true; // Fête Nationale
+  if(m===7 && d===15) return true; // Assomption
+  if(m===10 && d===1) return true; // Toussaint
+  if(m===10 && d===11) return true; // Armistice
+  if(m===11 && d===25) return true; // Noël
+
+  // Calcul dynamique de Pâques pour déduire Lundi de Pâques, Ascension et Pentecôte
+  var a = y % 19, b = Math.floor(y / 100), c = y % 100;
+  var d_ = Math.floor(b / 4), e = b % 4;
+  var f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  var h = (19 * a + b - d_ - g + 15) % 30;
+  var i = Math.floor(c / 4), k = c % 4;
+  var l = (32 + 2 * e + 2 * i - h - k) % 7;
+  var m_e = Math.floor((a + 11 * h + 22 * l) / 451);
+  var month = Math.floor((h + l - 7 * m_e + 114) / 31) - 1;
+  var day = ((h + l - 7 * m_e + 114) % 31) + 1;
+  var easter = new Date(y, month, day);
+  var curr = new Date(y, m, d);
+  var diff = Math.round((curr - easter) / (1000 * 60 * 60 * 24));
+
+  if(diff === 1 || diff === 39 || diff === 50) return true;
+  return false;
+}
+
 function isVa(y,m,d){var s=dStr(y,m,d);for(var i=0;i<VACANCES.length;i++){if(s>=VACANCES[i][0]&&s<=VACANCES[i][1])return true;}return false;}
 function isWe(y,m,d){var w=new Date(y,m,d).getDay();return w===0||w===6;}
 function isTd(y,m,d){return y===TODAY.getFullYear()&&m===TODAY.getMonth()&&d===TODAY.getDate();}
