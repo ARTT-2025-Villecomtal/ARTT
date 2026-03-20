@@ -300,38 +300,27 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 </head>
 <body>
 <div class="app" id="app"></div>
-<div id="modal-container"></div> <!-- Conteneur dédié pour les modales (Anti-Saut) -->
+<div id="modal-container"></div>
 
 <script>
 "use strict";
 
-// === GESTION DU THEME SOMBRE / CLAIR ===
 (function(){
   var savedTheme = localStorage.getItem('artt-theme');
-  if(savedTheme) {
-    document.documentElement.setAttribute('data-theme', savedTheme);
-  } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    document.documentElement.setAttribute('data-theme', 'dark');
-  }
+  if(savedTheme) { document.documentElement.setAttribute('data-theme', savedTheme); }
+  else { document.documentElement.setAttribute('data-theme', 'light'); }
 })();
 
-// === CONFIGURATION BASE DE DONNÉES (Google Sheets) ===
 var GAS_URL = "https://script.google.com/macros/s/AKfycbwtgIAd33LQ6yVKFWB89TCddMGtZlxQRkfepLjpvZvTYvu1vPoGuiGiCBwj8SaaRwbhqQ/exec";
 
-// Fonction de fetch robuste (attrape les erreurs silencieusement pour éviter l'erreur console)
 const sbFetch = async (url, options) => {
   try {
     const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
     return await response.json();
-  } catch (err) {
-    throw new Error("Network request failed");
-  }
+  } catch (err) { throw new Error("Network request failed"); }
 };
 
-// GESTION DES COMMENTAIRES ET PERIODES
 function parseCmt(raw) {
     if(!raw) return {p:'full', c:''};
     if(raw.indexOf('[AM] ') === 0) return {p:'am', c:raw.substring(5)};
@@ -341,9 +330,8 @@ function parseCmt(raw) {
 
 function checkGasUrl() {
     if(GAS_URL === "VOTRE_URL_GOOGLE_APPS_SCRIPT_ICI" || !GAS_URL) {
-        showToast("⚠️ Attention : Veuillez configurer l'URL de votre Google Sheets (GAS_URL) dans le code source.", true);
-        setSS("err");
-        return false;
+        showToast("⚠️ URL Google Sheets non configurée.", true);
+        setSS("err"); return false;
     }
     return true;
 }
@@ -351,12 +339,9 @@ function checkGasUrl() {
 async function loadDB(){
   if(!checkGasUrl()) return null;
   setSS("spin");
-  
   try {
       const rows = await sbFetch(GAS_URL);
-      var ev={};
-      var loadedPers=null, loadedCauses=null, loadedSvc=null, loadedGrp=null;
-      
+      var ev={}, loadedPers=null, loadedCauses=null, loadedSvc=null, loadedGrp=null;
       if(rows && Array.isArray(rows)) {
         rows.forEach(function(r){
           if(r.id==="__personnels__"){ try{loadedPers=JSON.parse(r.comment);}catch(e){} }
@@ -366,15 +351,12 @@ async function loadDB(){
           else {
             var baseKey = r.id.replace('-am','').replace('-pm','');
             if(!ev[baseKey]) ev[baseKey] = { type: 'empty' };
-            
             var parsed = parseCmt(r.comment);
             var isAm = r.id.endsWith('-am') || parsed.p === 'am';
             var isPm = r.id.endsWith('-pm') || parsed.p === 'pm';
             var isFull = !isAm && !isPm;
-            
-            if(isFull){
-                ev[baseKey] = { type: 'full', causeId: r.cause_id, comment: parsed.c };
-            } else {
+            if(isFull){ ev[baseKey] = { type: 'full', causeId: r.cause_id, comment: parsed.c }; }
+            else {
                 if (ev[baseKey].type !== 'half') ev[baseKey] = { type: 'half', am: null, pm: null };
                 if (isAm) ev[baseKey].am = { causeId: r.cause_id, comment: parsed.c };
                 if (isPm) ev[baseKey].pm = { causeId: r.cause_id, comment: parsed.c };
@@ -382,17 +364,12 @@ async function loadDB(){
           }
         });
       }
-      
       Object.keys(ev).forEach(function(k){
           if(ev[k].type === 'empty' || (ev[k].type === 'half' && !ev[k].am && !ev[k].pm)) delete ev[k];
       });
-
       setSS("ok");
       return {events:ev, personnels:loadedPers, causes:loadedCauses, services:loadedSvc, groupes:loadedGrp};
-  } catch (e) {
-      setSS("err");
-      return null;
-  }
+  } catch (e) { setSS("err"); return null; }
 }
 
 async function saveConfig(){
@@ -402,45 +379,22 @@ async function saveConfig(){
   var p2 = {id: "__causes__", cause_id: 0, comment: JSON.stringify(ST.causes)};
   var p3 = {id: "__services__", cause_id: 0, comment: JSON.stringify(ST.services)};
   var p4 = {id: "__groupes__", cause_id: 0, comment: JSON.stringify(ST.groupes)};
-  
   try {
-      await sbFetch(GAS_URL, {
-          method: 'POST',
-          body: JSON.stringify({action: 'upsert', payload: [p1, p2, p3, p4]}),
-          headers: {'Content-Type': 'text/plain;charset=utf-8'}
-      });
+      await sbFetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'upsert', payload: [p1, p2, p3, p4]}), headers: {'Content-Type': 'text/plain;charset=utf-8'} });
       setSS("ok");
-  } catch(e) {
-      setSS("err");
-  }
+  } catch(e) { setSS("err"); }
 }
 
 async function saveEvsDB(upserts, deletes){
   if(!checkGasUrl()) return;
   setSS("spin");
-  
   try {
       let p1 = null, p2 = null;
-      if(upserts && upserts.length > 0) {
-          p1 = sbFetch(GAS_URL, {
-              method: 'POST',
-              body: JSON.stringify({action: 'upsert', payload: upserts}),
-              headers: {'Content-Type': 'text/plain;charset=utf-8'}
-          });
-      }
-      if(deletes && deletes.length > 0) {
-          p2 = sbFetch(GAS_URL, {
-              method: 'POST',
-              body: JSON.stringify({action: 'delete', ids: deletes}),
-              headers: {'Content-Type': 'text/plain;charset=utf-8'}
-          });
-      }
+      if(upserts && upserts.length > 0) p1 = sbFetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'upsert', payload: upserts}), headers: {'Content-Type': 'text/plain;charset=utf-8'} });
+      if(deletes && deletes.length > 0) p2 = sbFetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'delete', ids: deletes}), headers: {'Content-Type': 'text/plain;charset=utf-8'} });
       await Promise.all([p1, p2].filter(p => p !== null));
       setSS("ok");
-  } catch(e) {
-      setSS("err");
-      showToast("Erreur sauvegarde", 1);
-  }
+  } catch(e) { setSS("err"); showToast("Erreur sauvegarde", 1); }
 }
 
 function setSS(s){
@@ -458,32 +412,22 @@ function showToast(msg,isErr){
   setTimeout(function(){if(t.parentNode)t.remove();},3000);
 }
 
-function getNameColWidth() {
-    var stub = document.querySelector('.stub-w');
-    return stub ? stub.offsetWidth : 180;
-}
+function getNameColWidth() { var stub = document.querySelector('.stub-w'); return stub ? stub.offsetWidth : 180; }
 
-// === LOGIQUE IMPORT EXCEL ===
+// --- LOGIQUE IMPORT EXCEL ---
 function batchSend(arr, index, callback) {
     if(!checkGasUrl()) return;
-    
-    var chunkSize = 150; 
-    var chunk = arr.slice(index, index + chunkSize);
+    var chunkSize = 150; var chunk = arr.slice(index, index + chunkSize);
     if(chunk.length === 0) { callback(); return; }
-    
-    fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({action: 'upsert', payload: chunk}),
-        headers: {'Content-Type': 'text/plain;charset=utf-8'}
-    }).then(function(r) {
+    fetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'upsert', payload: chunk}), headers: {'Content-Type': 'text/plain;charset=utf-8'} })
+    .then(function(r) {
         if(!r.ok) throw new Error("Erreur réseau");
         var nextIndex = index + chunkSize;
         var log = document.getElementById("importLog");
         if(log) log.textContent = "Envoi à Google Sheets : " + Math.min(nextIndex, arr.length) + " / " + arr.length + " absences terminées...";
         batchSend(arr, nextIndex, callback);
     }).catch(function(e) {
-        console.error(e);
-        var log = document.getElementById("importLog");
+        console.error(e); var log = document.getElementById("importLog");
         if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur d'envoi. Veuillez réessayer.</span>";
     });
 }
@@ -491,21 +435,16 @@ function batchSend(arr, index, callback) {
 function processExcelImport(arrayBuffer) {
     var log = document.getElementById("importLog");
     if(log) log.textContent = "Lecture du fichier Excel en cours...";
-    
     try {
         var data = new Uint8Array(arrayBuffer);
         var workbook = XLSX.read(data, {type: 'array', cellStyles: true, cellDates: true, cellNF: true});
-        
         var targetSheetName = workbook.SheetNames[0];
         for(var i=0; i<workbook.SheetNames.length; i++) {
             if(workbook.SheetNames[i].toLowerCase().indexOf("janvier") > -1 || workbook.SheetNames[i].toLowerCase().indexOf("planning") > -1 || workbook.SheetNames[i].toLowerCase().indexOf("artt") > -1) {
-                targetSheetName = workbook.SheetNames[i];
-                break;
+                targetSheetName = workbook.SheetNames[i]; break;
             }
         }
-        
         var worksheet = workbook.Sheets[targetSheetName];
-        
         if (worksheet['!merges']) {
             worksheet['!merges'].forEach(function(merge) {
                 var startCellAddr = XLSX.utils.encode_cell({r: merge.s.r, c: merge.s.c});
@@ -525,2196 +464,660 @@ function processExcelImport(arrayBuffer) {
                 }
             });
         }
-
         var range = XLSX.utils.decode_range(worksheet['!ref']);
         var R_days = -1;
-        
         for(var r = range.s.r; r <= Math.min(range.s.r + 20, range.e.r); r++) {
             var nums = [];
             for(var c = range.s.c; c <= Math.min(range.s.c + 100, range.e.c); c++) {
                 var cell = worksheet[XLSX.utils.encode_cell({r: r, c: c})];
-                if(cell && cell.v !== undefined && String(cell.v).trim() !== "") {
-                    nums.push(String(cell.v).trim());
-                }
+                if(cell && cell.v !== undefined && String(cell.v).trim() !== "") nums.push(String(cell.v).trim());
             }
             var str = nums.join(",");
-            if(str.indexOf("1,2,3") > -1 && str.indexOf("10,11") > -1) {
-                R_days = r;
-                break;
-            }
+            if(str.indexOf("1,2,3") > -1 && str.indexOf("10,11") > -1) { R_days = r; break; }
         }
-        
-        if(R_days === -1) {
-            if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur : Impossible de détecter la ligne des jours. Vérifiez le format.</span>";
-            return;
-        }
-        
+        if(R_days === -1) { if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur : Impossible de détecter la ligne des jours. Vérifiez le format.</span>"; return; }
         function norm(s) { return s ? String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : ""; }
         function getMonthIndex(s) {
-            if(!s) return -1;
-            s = norm(s);
-            var mNames = ["janv","fev","mar","avr","mai","juin","juil","aou","sep","oct","nov","dec"];
-            for(var i=0; i<mNames.length; i++) {
-                if(s.indexOf(mNames[i]) > -1) return i;
-            }
-            return -1;
+            if(!s) return -1; s = norm(s); var mNames = ["janv","fev","mar","avr","mai","juin","juil","aou","sep","oct","nov","dec"];
+            for(var i=0; i<mNames.length; i++) { if(s.indexOf(mNames[i]) > -1) return i; } return -1;
         }
-        
-        var colIndexToDate = {};
-        var activeMonthFromHeader = -1;
-        var currentYear = ST.year;
-        var lastDay = -1;
-        var lastMonth = -1;
-
+        var colIndexToDate = {}; var activeMonthFromHeader = -1; var currentYear = ST.year; var lastDay = -1; var lastMonth = -1;
         for(var c = range.s.c; c <= range.e.c; c++) {
-            var dayCell = worksheet[XLSX.utils.encode_cell({r: R_days, c: c})];
-            if (!dayCell) continue;
-            
-            var dNum = NaN;
-            var m = -1;
-            var y = currentYear;
-
+            var dayCell = worksheet[XLSX.utils.encode_cell({r: R_days, c: c})]; if (!dayCell) continue;
+            var dNum = NaN; var m = -1; var y = currentYear;
             if (dayCell.t === 'd' || dayCell.v instanceof Date) {
-                var dt = new Date(dayCell.v);
-                dNum = dt.getDate();
-                m = dt.getMonth();
-                y = dt.getFullYear();
-                activeMonthFromHeader = m;
+                var dt = new Date(dayCell.v); dNum = dt.getDate(); m = dt.getMonth(); y = dt.getFullYear(); activeMonthFromHeader = m;
             } else {
-                var cellStr = dayCell.w ? String(dayCell.w).trim() : String(dayCell.v).trim();
-                dNum = parseInt(cellStr, 10);
-                if (isNaN(dNum)) continue;
-
+                var cellStr = dayCell.w ? String(dayCell.w).trim() : String(dayCell.v).trim(); dNum = parseInt(cellStr, 10); if (isNaN(dNum)) continue;
                 for (var i = 1; i <= 3; i++) {
                     var monthCell = worksheet[XLSX.utils.encode_cell({r: R_days - i, c: c})];
                     if (monthCell && monthCell.v) {
-                        var mStr = monthCell.w ? String(monthCell.w) : String(monthCell.v);
-                        var mIdx = getMonthIndex(mStr);
-                        if (mIdx !== -1) {
-                            activeMonthFromHeader = mIdx;
-                            break;
-                        }
+                        var mStr = monthCell.w ? String(monthCell.w) : String(monthCell.v); var mIdx = getMonthIndex(mStr);
+                        if (mIdx !== -1) { activeMonthFromHeader = mIdx; break; }
                     }
                 }
-
                 m = activeMonthFromHeader;
-
-                if (m === -1) {
-                    if (dNum > 20) m = 11;
-                    else m = 0;
-                    activeMonthFromHeader = m;
-                }
-
-                if (dNum <= 5 && lastDay >= 25) {
-                    var expectedNext = (lastMonth === 11) ? 0 : lastMonth + 1;
-                    if (m !== expectedNext) {
-                        m = expectedNext;
-                        activeMonthFromHeader = m;
-                    }
-                } else if (lastDay !== -1 && dNum < lastDay) {
-                    continue; 
-                }
-
-                if (lastMonth === 11 && m === 0 && dNum <= 5 && c > 200) currentYear++;
-                y = currentYear;
-
+                if (m === -1) { if (dNum > 20) m = 11; else m = 0; activeMonthFromHeader = m; }
+                if (dNum <= 5 && lastDay >= 25) { var expectedNext = (lastMonth === 11) ? 0 : lastMonth + 1; if (m !== expectedNext) { m = expectedNext; activeMonthFromHeader = m; } } 
+                else if (lastDay !== -1 && dNum < lastDay) { continue; }
+                if (lastMonth === 11 && m === 0 && dNum <= 5 && c > 200) currentYear++; y = currentYear;
                 if (m === 11 && dNum > 20 && c < range.s.c + 30) y = ST.year - 1; 
             }
-
-            colIndexToDate[c] = {y: y, m: m, d: dNum};
-            lastMonth = m;
-            lastDay = dNum; 
+            colIndexToDate[c] = {y: y, m: m, d: dNum}; lastMonth = m; lastDay = dNum; 
         }
-        
-        var eventsToPush = [];
-        var count = 0;
-        var unrecognized = [];
-        
+        var eventsToPush = []; var count = 0; var unrecognized = [];
         var getCauseId = function(valString) {
-            var nVal = norm(valString);
-            if (!nVal) return null;
-            var clean = nVal.replace(/[^a-z0-9]/g, '');
+            var nVal = norm(valString); if (!nVal) return null; var clean = nVal.replace(/[^a-z0-9]/g, '');
             if (clean.indexOf('cp')>-1 || clean.indexOf('ca')>-1 || clean.indexOf('conge')>-1) return 2;
-            if (clean.indexOf('rtt')>-1) return 1;
-            if (clean.indexOf('tele')>-1 || clean === 'tt') return 8;
-            if (clean.indexOf('famill')>-1 || clean.indexOf('evenement')>-1) return 3;
-            if (clean.indexOf('formation')>-1) return 5;
-            if (clean.indexOf('delegation')>-1) return 6;
-            if (clean.indexOf('reunion')>-1) return 4;
-            if (clean === 'rc' || clean.indexOf('repos')>-1) return 7;
-            
-            var cause = ST.causes.find(function(ca) { 
-                var cNorm = norm(ca.short);
-                var cLab = norm(ca.label);
-                return cNorm === nVal || String(ca.id) === valString.trim() || cLab === nVal || cLab.indexOf(nVal) === 0; 
-            });
+            if (clean.indexOf('rtt')>-1) return 1; if (clean.indexOf('tele')>-1 || clean === 'tt') return 8;
+            if (clean.indexOf('famill')>-1 || clean.indexOf('evenement')>-1) return 3; if (clean.indexOf('formation')>-1) return 5;
+            if (clean.indexOf('delegation')>-1) return 6; if (clean.indexOf('reunion')>-1) return 4; if (clean === 'rc' || clean.indexOf('repos')>-1) return 7;
+            var cause = ST.causes.find(function(ca) { var cNorm = norm(ca.short); var cLab = norm(ca.label); return cNorm === nVal || String(ca.id) === valString.trim() || cLab === nVal || cLab.indexOf(nVal) === 0; });
             return cause ? cause.id : null;
         };
-
-        // CORRECTEUR D'ENCODAGE UTF-8 pour Excel
         function fixEncoding(str) {
             if (!str) return "";
-            try {
-                if (str.indexOf('Ã') > -1) {
-                    return decodeURIComponent(Array.prototype.map.call(str, function(c) {
-                        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-                    }).join(''));
-                }
-            } catch(e) { }
-            return str;
+            try { if (str.indexOf('Ã') > -1) { return decodeURIComponent(Array.prototype.map.call(str, function(c) { return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2); }).join('')); } } catch(e) { } return str;
         }
-        
-        var newEvents = {}; // On stocke le nouvel import temporairement
-
+        var newEvents = {};
         for(var r = R_days + 1; r <= range.e.r; r++) {
-            var empId = null;
-            var cellNameFound = "";
-            var bestScore = 0;
-            
+            var empId = null; var cellNameFound = ""; var bestScore = 0;
             for(var c2 = range.s.c; c2 < Math.min(range.s.c + 10, range.e.c); c2++) { 
-               var nCell = worksheet[XLSX.utils.encode_cell({r: r, c: c2})];
-               if(!nCell || !nCell.v) continue;
-               var cellStr = norm(String(nCell.v));
-               if(cellStr.length < 3) continue;
-               
+               var nCell = worksheet[XLSX.utils.encode_cell({r: r, c: c2})]; if(!nCell || !nCell.v) continue;
+               var cellStr = norm(String(nCell.v)); if(cellStr.length < 3) continue;
                for(var i=0; i<ST.personnels.length; i++) {
-                   var p = ST.personnels[i];
-                   var nNom = norm(p.nom);
-                   var score = 0;
-                   
-                   if (nNom === cellStr) score = 100;
-                   else if (nNom.replace(/\s+/g, '') === cellStr.replace(/\s+/g, '')) score = 95;
+                   var p = ST.personnels[i]; var nNom = norm(p.nom); var score = 0;
+                   if (nNom === cellStr) score = 100; else if (nNom.replace(/\s+/g, '') === cellStr.replace(/\s+/g, '')) score = 95;
                    else {
-                       var pWords = nNom.split(/[\s\.\-]+/).filter(function(x){return x.length>2;});
-                       var eWords = cellStr.split(/[\s\.\-]+/).filter(function(x){return x.length>2;});
-                       var matches = 0;
-                       var usedE = {};
-                       for(var j=0; j<pWords.length; j++) {
-                           for(var k=0; k<eWords.length; k++) {
-                               if(usedE[k]) continue;
-                               if (pWords[j] === eWords[k] || pWords[j].indexOf(eWords[k]) === 0 || eWords[k].indexOf(pWords[j]) === 0) {
-                                   matches++;
-                                   usedE[k] = true;
-                                   break;
-                               }
-                           }
-                       }
-                       score = matches * 30;
-                       if (matches > 0 && (matches === pWords.length || matches === eWords.length)) score += 20;
+                       var pWords = nNom.split(/[\s\.\-]+/).filter(function(x){return x.length>2;}); var eWords = cellStr.split(/[\s\.\-]+/).filter(function(x){return x.length>2;});
+                       var matches = 0; var usedE = {};
+                       for(var j=0; j<pWords.length; j++) { for(var k=0; k<eWords.length; k++) { if(usedE[k]) continue; if (pWords[j] === eWords[k] || pWords[j].indexOf(eWords[k]) === 0 || eWords[k].indexOf(pWords[j]) === 0) { matches++; usedE[k] = true; break; } } }
+                       score = matches * 30; if (matches > 0 && (matches === pWords.length || matches === eWords.length)) score += 20;
                    }
-                   
-                   if (score > bestScore && score >= 30) {
-                       bestScore = score;
-                       empId = p.id;
-                       cellNameFound = String(nCell.v);
-                   }
+                   if (score > bestScore && score >= 30) { bestScore = score; empId = p.id; cellNameFound = String(nCell.v); }
                }
                if (empId) break; 
             }
-            
             if(empId) {
                for(var c3 = range.s.c; c3 <= range.e.c; c3++) {
-                  var dateObj = colIndexToDate[c3];
-                  if(!dateObj) continue; 
-                  
-                  var valCell = worksheet[XLSX.utils.encode_cell({r: r, c: c3})];
-                  if(!valCell || valCell.v === undefined || valCell.v === null || valCell.v === "") continue;
-                  
-                  var rawVal = valCell.w ? String(valCell.w) : String(valCell.v);
-                  var causeId = getCauseId(rawVal);
-                  
+                  var dateObj = colIndexToDate[c3]; if(!dateObj) continue; 
+                  var valCell = worksheet[XLSX.utils.encode_cell({r: r, c: c3})]; if(!valCell || valCell.v === undefined || valCell.v === null || valCell.v === "") continue;
+                  var rawVal = valCell.w ? String(valCell.w) : String(valCell.v); var causeId = getCauseId(rawVal);
                   if(causeId) {
-                     var comment = "";
-                     var period = 'full'; // Import FORCÉ en journée complète
-                     
-                     if (valCell.c && valCell.c.length > 0) {
-                         comment = valCell.c.map(function(cmt){ return cmt.t; }).join(" | ").replace(/\n/g, " ").trim();
-                     } 
-                     
-                     var causeLabelNorm = norm(cLabel(causeId));
-                     var rawValNorm = norm(rawVal);
-                     if (rawValNorm !== causeLabelNorm && rawValNorm !== String(causeId) && rawValNorm.length > 1) {
-                         if (comment) comment += " (" + rawVal.trim() + ")";
-                         else comment = rawVal.trim();
-                     }
-
-                     comment = fixEncoding(comment);
-                     if (!comment) comment = "Import Excel";
-                     
+                     var comment = ""; var period = 'full'; 
+                     if (valCell.c && valCell.c.length > 0) { comment = valCell.c.map(function(cmt){ return cmt.t; }).join(" | ").replace(/\n/g, " ").trim(); } 
+                     var causeLabelNorm = norm(cLabel(causeId)); var rawValNorm = norm(rawVal);
+                     if (rawValNorm !== causeLabelNorm && rawValNorm !== String(causeId) && rawValNorm.length > 1) { if (comment) comment += " (" + rawVal.trim() + ")"; else comment = rawVal.trim(); }
+                     comment = fixEncoding(comment); if (!comment) comment = "Import Excel";
                      var baseKey = eKey(empId, dateObj.y, dateObj.m, dateObj.d);
-                     
-                     if(!newEvents[baseKey]) newEvents[baseKey] = {type:'empty'};
-                     newEvents[baseKey] = {type:'full', causeId:causeId, comment:comment};
-                     
-                     eventsToPush.push({id: baseKey, cause_id: causeId, comment: comment});
-                     count++;
+                     if(!newEvents[baseKey]) newEvents[baseKey] = {type:'empty'}; newEvents[baseKey] = {type:'full', causeId:causeId, comment:comment};
+                     eventsToPush.push({id: baseKey, cause_id: causeId, comment: comment}); count++;
                   }
                }
             } else if (cellNameFound && cellNameFound.length > 3 && cellNameFound.toLowerCase() !== "légende" && cellNameFound.toLowerCase().indexOf("jour férié") === -1 && cellNameFound.toLowerCase().indexOf("week") === -1) {
                 if (unrecognized.indexOf(cellNameFound) === -1) unrecognized.push(cellNameFound);
             }
         }
-        
-        // === EFFACEMENT PREALABLE ===
         var oldDbIdsToDelete = [];
-        Object.keys(ST.events).forEach(function(k) {
-            var ev = ST.events[k];
-            if(ev.type === 'full') oldDbIdsToDelete.push(k);
-            else if (ev.type === 'half') {
-                if(ev.am) oldDbIdsToDelete.push(k+'-am');
-                if(ev.pm) oldDbIdsToDelete.push(k+'-pm');
-            }
-        });
-
-        if(eventsToPush.length === 0 && oldDbIdsToDelete.length === 0) {
-            if(log) log.innerHTML = "<span style='color:#F97316'>Aucune donnée à importer.</span>";
-            return;
-        }
-
+        Object.keys(ST.events).forEach(function(k) { var ev = ST.events[k]; if(ev.type === 'full') oldDbIdsToDelete.push(k); else if (ev.type === 'half') { if(ev.am) oldDbIdsToDelete.push(k+'-am'); if(ev.pm) oldDbIdsToDelete.push(k+'-pm'); } });
+        if(eventsToPush.length === 0 && oldDbIdsToDelete.length === 0) { if(log) log.innerHTML = "<span style='color:#F97316'>Aucune donnée à importer.</span>"; return; }
         if(log) log.textContent = "Effacement de l'ancien planning et import en cours (" + count + " absences)...";
-
-        // Remplacement immédiat dans l'interface
         ST.events = newEvents;
-
         function startUpsert() {
-            if (eventsToPush.length === 0) {
-                if(log) log.innerHTML = "<span style='color:var(--primary)'>✅ Ancien planning effacé.</span>";
-                renderApp();
-                return;
-            }
+            if (eventsToPush.length === 0) { if(log) log.innerHTML = "<span style='color:var(--primary)'>✅ Ancien planning effacé.</span>"; renderApp(); return; }
             batchSend(eventsToPush, 0, function() {
                 var logHtml = "<span style='color:var(--primary)'>✅ Import terminé avec succès ! ("+count+" absences ajoutées)</span>";
-                if(unrecognized.length > 0) {
-                    logHtml += "<br><span style='color:#F97316; font-size:11px'>Lignes ignorées (noms introuvables) : " + unrecognized.join(', ') + "</span>";
-                }
-                if(log) log.innerHTML = logHtml;
-                renderApp();
-                showToast(count + " absences importées");
+                if(unrecognized.length > 0) { logHtml += "<br><span style='color:#F97316; font-size:11px'>Lignes ignorées (noms introuvables) : " + unrecognized.join(', ') + "</span>"; }
+                if(log) log.innerHTML = logHtml; renderApp(); showToast(count + " absences importées");
             });
         }
-
-        // Si on a des anciennes données à effacer dans le Sheets
         if (oldDbIdsToDelete.length > 0) {
             function batchDelete(ids, idx, cb) {
-                var chunk = ids.slice(idx, idx + 500);
-                if(chunk.length === 0) { cb(); return; }
-                fetch(GAS_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({action: 'delete', ids: chunk}),
-                    headers: {'Content-Type': 'text/plain;charset=utf-8'}
-                }).then(function(){
-                    batchDelete(ids, idx + 500, cb);
-                }).catch(function(){
-                    batchDelete(ids, idx + 500, cb);
-                });
+                var chunk = ids.slice(idx, idx + 500); if(chunk.length === 0) { cb(); return; }
+                fetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'delete', ids: chunk}), headers: {'Content-Type': 'text/plain;charset=utf-8'} }).then(function(){ batchDelete(ids, idx + 500, cb); }).catch(function(){ batchDelete(ids, idx + 500, cb); });
             }
             batchDelete(oldDbIdsToDelete, 0, startUpsert);
-        } else {
-            startUpsert();
-        }
-        
-    } catch(err) {
-        console.error(err);
-        if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur technique lors de la lecture du fichier Excel.</span>";
-    }
+        } else { startUpsert(); }
+    } catch(err) { console.error(err); if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur technique lors de la lecture du fichier Excel.</span>"; }
 }
 
-// === DONNÉES INITIALES PAR DÉFAUT ===
-var CD=[
-  {id:1,label:"JRTT",color:"#E24B4A",short:"1"},
-  {id:2,label:"CP",color:"#3B82F6",short:"2"},
-  {id:3,label:"Evènement Familial",color:"#F97316",short:"3"},
-  {id:4,label:"Réunion Extérieure",color:"#10B981",short:"4"},
-  {id:5,label:"Formation Extérieur",color:"#8B5CF6",short:"5"},
-  {id:6,label:"Délégation Extérieur",color:"#6B7280",short:"6"},
-  {id:7,label:"Repos Compensateur",color:"#1D4ED8",short:"7"},
-  {id:8,label:"Télétravail",color:"#14B8A6",short:"8"}
-];
-
-var VACANCES=[
-  ["2025-02-08","2025-02-23"],["2025-04-05","2025-04-21"],["2025-07-05","2025-08-31"],["2025-10-18","2025-11-02"],["2025-12-20","2026-01-04"],
-  ["2026-02-14","2026-03-01"],["2026-04-11","2026-04-26"],["2026-07-04","2026-08-31"],["2026-10-17","2026-11-01"],["2026-12-19","2027-01-03"],
-  ["2027-02-06","2027-02-21"],["2027-04-03","2027-04-18"],["2027-07-07","2027-08-31"],["2027-10-23","2027-11-07"],["2027-12-18","2028-01-02"],
-  ["2028-02-12","2028-02-27"],["2028-04-08","2028-04-23"],["2028-07-06","2028-08-31"],["2028-10-21","2028-11-05"],["2028-12-23","2029-01-07"],
-  ["2029-02-10","2029-02-25"],["2029-04-07","2029-04-22"],["2029-07-07","2029-08-31"],["2029-10-20","2029-11-04"],["2029-12-22","2030-01-06"]
-];
-
+// --- DONNEES PAR DEFAUT ---
+var CD=[{id:1,label:"JRTT",color:"#E24B4A",short:"1"},{id:2,label:"CP",color:"#3B82F6",short:"2"},{id:3,label:"Evènement Familial",color:"#F97316",short:"3"},{id:4,label:"Réunion Extérieure",color:"#10B981",short:"4"},{id:5,label:"Formation Extérieur",color:"#8B5CF6",short:"5"},{id:6,label:"Délégation Extérieur",color:"#6B7280",short:"6"},{id:7,label:"Repos Compensateur",color:"#1D4ED8",short:"7"},{id:8,label:"Télétravail",color:"#14B8A6",short:"8"}];
+var VACANCES=[["2025-02-08","2025-02-23"],["2025-04-05","2025-04-21"],["2025-07-05","2025-08-31"],["2025-10-18","2025-11-02"],["2025-12-20","2026-01-04"],["2026-02-14","2026-03-01"],["2026-04-11","2026-04-26"],["2026-07-04","2026-08-31"],["2026-10-17","2026-11-01"],["2026-12-19","2027-01-03"],["2027-02-06","2027-02-21"],["2027-04-03","2027-04-18"],["2027-07-07","2027-08-31"],["2027-10-23","2027-11-07"],["2027-12-18","2028-01-02"],["2028-02-12","2028-02-27"],["2028-04-08","2028-04-23"],["2028-07-06","2028-08-31"],["2028-10-21","2028-11-05"],["2028-12-23","2029-01-07"],["2029-02-10","2029-02-25"],["2029-04-07","2029-04-22"],["2029-07-07","2029-08-31"],["2029-10-20","2029-11-04"],["2029-12-22","2030-01-06"]];
 var XLS={};
-
 var MO=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 var MS=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Aoû","Sep","Oct","Nov","Déc"];
-var DL=["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
-var DS=["D","L","M","M","J","V","S"];
+var DL=["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"], DS=["D","L","M","M","J","V","S"];
 var TODAY=new Date();
 
 var ST={
-  tab:"planning",
-  year:2026,
-  month:TODAY.getFullYear()===2026?TODAY.getMonth():0,
-  fSvc:"",
-  fGrp:"",
-  fSearch:"", 
-  calSvc:"",
-  calPid:"",
-  selectedCauseId: null, 
-  selectedPeriod: "full", 
-  modal:null,
-  eModal:null,
-  pModal:null,
-  svcModal:null,
-  grpModal:null,
-  bModal:null,
-  tutoModal:false,
-  isAdmin:false,
-  loaded:false,
-  scrollPlanX: 0,
-  scrollPlanY: 0,
-  scrollCalX: 0,
-  scrollCalY: 0,
-  initialScrollDone: false,
-  ignoreScroll: false,
-  drag: { active: false, pid: null, startDt: null, endDt: null }, // GESTION DU GLISSER DEPOSER
-  events: JSON.parse(JSON.stringify(XLS)),
-  causes:CD.map(function(c){return {id:c.id,label:c.label,color:c.color,short:c.short};}),
-  services:["Avenir","CG","DL-producteur","DU","Flux","Maintenance","Perf & Sécu","Production","Qualité, Environnement","Restaurant","RH","Sécurité"],
-  groupes:["Apprenti","Apprentie","Assist Gestion","Back-up","Cadre","CODU","Coordinateur","Opérat","Resp Op","Resp Tech","Resp Tech WE","Tech"],
-  personnels:[
-    {id:1,nom:"ARTIGALA Jean-Yves",service:"Sécurité",groupe:"Apprenti"},
-    {id:2,nom:"BAJON Jean-Sébastien",service:"Production",groupe:"Coordinateur"},
-    {id:3,nom:"BARNETT REBECCA",service:"Flux",groupe:"Tech"},
-    {id:4,nom:"BARRET JOCELYN",service:"RH",groupe:"Back-up"},
-    {id:5,nom:"BELIJAR MANON",service:"Flux",groupe:"CODU"},
-    {id:6,nom:"BERDOU MICHEL",service:"Production",groupe:"Resp Op"},
-    {id:7,nom:"BESSIERE Carla",service:"Qualité, Environnement",groupe:"Apprenti"},
-    {id:8,nom:"BOIL JULIE",service:"RH",groupe:"Cadre"},
-    {id:9,nom:"BOUIN Eric",service:"Production",groupe:"Coordinateur"},
-    {id:10,nom:"CARDOSO Stephane",service:"Flux",groupe:"Resp Op"},
-    {id:11,nom:"COUGET Frederic",service:"Maintenance",groupe:"Coordinateur"},
-    {id:12,nom:"DARRE Nicolas",service:"Restaurant",groupe:"Cadre"},
-    {id:13,nom:"DECAP Franck",service:"Flux",groupe:"CODU"},
-    {id:14,nom:"DELOSTE Alexandre",service:"Flux",groupe:"Tech"},
-    {id:15,nom:"DUCASSE Bertrand",service:"Maintenance",groupe:"Tech"},
-    {id:16,nom:"DUCLOS Laurent",service:"Production",groupe:"Cadre"},
-    {id:17,nom:"ESPINOSA Laurent",service:"Sécurité",groupe:"Tech"},
-    {id:18,nom:"FILLEY Alice",service:"Flux",groupe:"Cadre"},
-    {id:19,nom:"FONTBONNE Coralie",service:"Qualité, Environnement",groupe:"Tech"},
-    {id:20,nom:"GARCIA Laurent",service:"Maintenance",groupe:"Cadre"},
-    {id:21,nom:"GAYE Jullian",service:"Maintenance",groupe:"Tech"},
-    {id:22,nom:"GOAS Aurelia",service:"RH",groupe:"Cadre"},
-    {id:23,nom:"HEBERT Martial",service:"CG",groupe:"CODU"},
-    {id:24,nom:"HENRAT Mylène",service:"Perf & Sécu",groupe:"CODU"},
-    {id:25,nom:"HOYER-MESSIER Celia",service:"Flux",groupe:"Tech"},
-    {id:26,nom:"JAMMET Jocelyne",service:"Production",groupe:"Resp Op"},
-    {id:27,nom:"JORT Hugo",service:"Avenir",groupe:"Cadre"},
-    {id:28,nom:"LACADEE Lisa",service:"Sécurité",groupe:"Cadre"},
-    {id:29,nom:"LANUSSE Thierry",service:"Production",groupe:"Resp Op"},
-    {id:30,nom:"LASSERRE Bertrand",service:"Production",groupe:"Resp Op"},
-    {id:31,nom:"LASSUS Emma",service:"CG",groupe:"Apprentie"},
-    {id:32,nom:"LATAPI Fabrice",service:"Production",groupe:"Resp Op"},
-    {id:33,nom:"LAVEDAN Dorian",service:"Flux",groupe:"Apprenti"},
-    {id:34,nom:"LEMBEYE Corinne",service:"DL-producteur",groupe:"Tech"},
-    {id:35,nom:"LUDWIG Alain",service:"Sécurité",groupe:"Tech"},
-    {id:36,nom:"MAURAN Pascal",service:"CG",groupe:"Tech"},
-    {id:37,nom:"MONTAUBAN Mathilde",service:"RH",groupe:"Apprenti"},
-    {id:38,nom:"MOURGUES Eric",service:"Production",groupe:"Coordinateur"},
-    {id:39,nom:"NAVARRE Christian",service:"Production",groupe:"Coordinateur"},
-    {id:40,nom:"NICOSIA Bruno",service:"Maintenance",groupe:"Resp Tech WE"},
-    {id:41,nom:"OLIVEROS ROMERO Susana",service:"Qualité, Environnement",groupe:"CODU"},
-    {id:42,nom:"PERES Sebastien",service:"Maintenance",groupe:"Tech"},
-    {id:43,nom:"PETIOX Florent",service:"Maintenance",groupe:"CODU"},
-    {id:44,nom:"POIRIER Adeline",service:"Production",groupe:"Coordinateur"},
-    {id:45,nom:"SAINT-SUPERY Stéphanie",service:"Restaurant",groupe:"Opérat"},
-    {id:46,nom:"SAMADET Christophe",service:"Maintenance",groupe:"Resp Tech"},
-    {id:47,nom:"SAMARAN Mélanie",service:"RH",groupe:"CODU"},
-    {id:48,nom:"TALBOT Jean Michel",service:"Qualité, Environnement",groupe:"Tech"},
-    {id:49,nom:"TESSIER Margot",service:"Qualité, Environnement",groupe:"Cadre"},
-    {id:50,nom:"TRIHAN Maxime",service:"Production",groupe:"Apprenti"},
-    {id:51,nom:"VALLE Stéphane",service:"Production",groupe:"Resp Op"},
-    {id:52,nom:"VALLE Thierry",service:"Flux",groupe:"Resp Op"},
-    {id:53,nom:"WORMLEIGHTON Davy",service:"CG",groupe:"Assist Gestion"},
-    {id:54,nom:"DEWEZ Fabrice",service:"DU",groupe:"CODU"},
-    {id:55,nom:"WETISCHEK Franck",service:"Production",groupe:"CODU"}
-  ]
+  tab:"planning", year:2026, month:TODAY.getFullYear()===2026?TODAY.getMonth():0, fSvc:"", fGrp:"", fSearch:"", calSvc:"", calPid:"", selectedCauseId: null, selectedPeriod: "full",
+  modal:null, eModal:null, pModal:null, svcModal:null, grpModal:null, bModal:null, tutoModal:false, isAdmin:false, loaded:false, currentUser: null, scrollPlanX: 0, scrollPlanY: 0, scrollCalX: 0, scrollCalY: 0, initialScrollDone: false, ignoreScroll: false, drag: { active: false, pid: null, startDt: null, endDt: null },
+  events: {}, causes:CD, services:["Avenir","CG","DL-producteur","DU","Flux","Maintenance","Perf & Sécu","Production","Qualité, Environnement","Restaurant","RH","Sécurité"], groupes:["Apprenti","Apprentie","Assist Gestion","Back-up","Cadre","CODU","Coordinateur","Opérat","Resp Op","Resp Tech","Resp Tech WE","Tech"],
+  personnels:[{id:1,nom:"ARTIGALA Jean-Yves",service:"Sécurité",groupe:"Apprenti"},{id:2,nom:"BAJON Jean-Sébastien",service:"Production",groupe:"Coordinateur"},{id:3,nom:"BARNETT REBECCA",service:"Flux",groupe:"Tech"},{id:4,nom:"BARRET JOCELYN",service:"RH",groupe:"Back-up"},{id:5,nom:"BELIJAR MANON",service:"Flux",groupe:"CODU"},{id:6,nom:"BERDOU MICHEL",service:"Production",groupe:"Resp Op"},{id:7,nom:"BESSIERE Carla",service:"Qualité, Environnement",groupe:"Apprenti"},{id:8,nom:"BOIL JULIE",service:"RH",groupe:"Cadre"},{id:9,nom:"BOUIN Eric",service:"Production",groupe:"Coordinateur"},{id:10,nom:"CARDOSO Stephane",service:"Flux",groupe:"Resp Op"},{id:11,nom:"COUGET Frederic",service:"Maintenance",groupe:"Coordinateur"},{id:12,nom:"DARRE Nicolas",service:"Restaurant",groupe:"Cadre"},{id:13,nom:"DECAP Franck",service:"Flux",groupe:"CODU"},{id:14,nom:"DELOSTE Alexandre",service:"Flux",groupe:"Tech"},{id:15,nom:"DUCASSE Bertrand",service:"Maintenance",groupe:"Tech"},{id:16,nom:"DUCLOS Laurent",service:"Production",groupe:"Cadre"},{id:17,nom:"ESPINOSA Laurent",service:"Sécurité",groupe:"Tech"},{id:18,nom:"FILLEY Alice",service:"Flux",groupe:"Cadre"},{id:19,nom:"FONTBONNE Coralie",service:"Qualité, Environnement",groupe:"Tech"},{id:20,nom:"GARCIA Laurent",service:"Maintenance",groupe:"Cadre"},{id:21,nom:"GAYE Jullian",service:"Maintenance",groupe:"Tech"},{id:22,nom:"GOAS Aurelia",service:"RH",groupe:"Cadre"},{id:23,nom:"HEBERT Martial",service:"CG",groupe:"CODU"},{id:24,nom:"HENRAT Mylène",service:"Perf & Sécu",groupe:"CODU"},{id:25,nom:"HOYER-MESSIER Celia",service:"Flux",groupe:"Tech"},{id:26,nom:"JAMMET Jocelyne",service:"Production",groupe:"Resp Op"},{id:27,nom:"JORT Hugo",service:"Avenir",groupe:"Cadre"},{id:28,nom:"LACADEE Lisa",service:"Sécurité",groupe:"Cadre"},{id:29,nom:"LANUSSE Thierry",service:"Production",groupe:"Resp Op"},{id:30,nom:"LASSERRE Bertrand",service:"Production",groupe:"Resp Op"},{id:31,nom:"LASSUS Emma",service:"CG",groupe:"Apprentie"},{id:32,nom:"LATAPI Fabrice",service:"Production",groupe:"Resp Op"},{id:33,nom:"LAVEDAN Dorian",service:"Flux",groupe:"Apprenti"},{id:34,nom:"LEMBEYE Corinne",service:"DL-producteur",groupe:"Tech"},{id:35,nom:"LUDWIG Alain",service:"Sécurité",groupe:"Tech"},{id:36,nom:"MAURAN Pascal",service:"CG",groupe:"Tech"},{id:37,nom:"MONTAUBAN Mathilde",service:"RH",groupe:"Apprenti"},{id:38,nom:"MOURGUES Eric",service:"Production",groupe:"Coordinateur"},{id:39,nom:"NAVARRE Christian",service:"Production",groupe:"Coordinateur"},{id:40,nom:"NICOSIA Bruno",service:"Maintenance",groupe:"Resp Tech WE"},{id:41,nom:"OLIVEROS ROMERO Susana",service:"Qualité, Environnement",groupe:"CODU"},{id:42,nom:"PERES Sebastien",service:"Maintenance",groupe:"Tech"},{id:43,nom:"PETIOX Florent",service:"Maintenance",groupe:"CODU"},{id:44,nom:"POIRIER Adeline",service:"Production",groupe:"Coordinateur"},{id:45,nom:"SAINT-SUPERY Stéphanie",service:"Restaurant",groupe:"Opérat"},{id:46,nom:"SAMADET Christophe",service:"Maintenance",groupe:"Resp Tech"},{id:47,nom:"SAMARAN Mélanie",service:"RH",groupe:"CODU"},{id:48,nom:"TALBOT Jean Michel",service:"Qualité, Environnement",groupe:"Tech"},{id:49,nom:"TESSIER Margot",service:"Qualité, Environnement",groupe:"Cadre"},{id:50,nom:"TRIHAN Maxime",service:"Production",groupe:"Apprenti"},{id:51,nom:"VALLE Stéphane",service:"Production",groupe:"Resp Op"},{id:52,nom:"VALLE Thierry",service:"Flux",groupe:"Resp Op"},{id:53,nom:"WORMLEIGHTON Davy",service:"CG",groupe:"Assist Gestion"},{id:54,nom:"DEWEZ Fabrice",service:"DU",groupe:"CODU"},{id:55,nom:"WETISCHEK Franck",service:"Production",groupe:"CODU"}]
 };
 
 // --- Helpers de dates ---
 function p2(n){return String(n).padStart(2,"0");}
 function dStr(y,m,d){return y+"-"+p2(m+1)+"-"+p2(d);}
-
 function isFe(y,m,d){
-  if(m===0 && d===1) return true; // Jour de l'An
-  if(m===4 && d===1) return true; // Fête du Travail
-  if(m===4 && d===8) return true; // Victoire 1945
-  if(m===6 && d===14) return true; // Fête Nationale
-  if(m===7 && d===15) return true; // Assomption
-  if(m===10 && d===1) return true; // Toussaint
-  if(m===10 && d===11) return true; // Armistice
-  if(m===11 && d===25) return true; // Noël
-
-  // Calcul dynamique de Pâques pour déduire Lundi de Pâques, Ascension et Pentecôte
-  var a = y % 19, b = Math.floor(y / 100), c = y % 100;
-  var d_ = Math.floor(b / 4), e = b % 4;
-  var f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
-  var h = (19 * a + b - d_ - g + 15) % 30;
-  var i = Math.floor(c / 4), k = c % 4;
-  var l = (32 + 2 * e + 2 * i - h - k) % 7;
-  var m_e = Math.floor((a + 11 * h + 22 * l) / 451);
-  var month = Math.floor((h + l - 7 * m_e + 114) / 31) - 1;
-  var day = ((h + l - 7 * m_e + 114) % 31) + 1;
-  var easter = new Date(y, month, day);
-  var curr = new Date(y, m, d);
-  var diff = Math.round((curr - easter) / (1000 * 60 * 60 * 24));
-
-  if(diff === 1 || diff === 39 || diff === 50) return true;
-  return false;
+  if(m===0&&d===1||m===4&&d===1||m===4&&d===8||m===6&&d===14||m===7&&d===15||m===10&&d===1||m===10&&d===11||m===11&&d===25)return true;
+  var a=y%19,b=Math.floor(y/100),c=y%100,d_=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d_-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m_e=Math.floor((a+11*h+22*l)/451),month=Math.floor((h+l-7*m_e+114)/31)-1,day=((h+l-7*m_e+114)%31)+1,easter=new Date(y,month,day),curr=new Date(y,m,d),diff=Math.round((curr-easter)/86400000);
+  return diff===1||diff===39||diff===50;
 }
-
 function isVa(y,m,d){var s=dStr(y,m,d);for(var i=0;i<VACANCES.length;i++){if(s>=VACANCES[i][0]&&s<=VACANCES[i][1])return true;}return false;}
 function isWe(y,m,d){var w=new Date(y,m,d).getDay();return w===0||w===6;}
 function isTd(y,m,d){return y===TODAY.getFullYear()&&m===TODAY.getMonth()&&d===TODAY.getDate();}
 function eKey(pid,y,m,d){return pid+"-"+y+"-"+m+"-"+d;}
-
-function cColor(id){for(var i=0;i<ST.causes.length;i++){if(ST.causes[i].id===id)return ST.causes[i].color;}return "#999";}
-function cLabel(id){for(var i=0;i<ST.causes.length;i++){if(ST.causes[i].id===id)return ST.causes[i].label;}return "";}
-function cShort(id){for(var i=0;i<ST.causes.length;i++){if(ST.causes[i].id===id)return ST.causes[i].short;}return "";}
+function cColor(id){var c=ST.causes.find(x=>x.id===id);return c?c.color:"#999";}
+function cLabel(id){var c=ST.causes.find(x=>x.id===id);return c?c.label:"";}
+function cShort(id){var c=ST.causes.find(x=>x.id===id);return c?c.short:"";}
 function dim(y,m){return new Date(y,m+1,0).getDate();}
 function dow(y,m,d){return new Date(y,m,d).getDay();}
-function isoWk(y,m,d){
-  var dt=new Date(y,m,d);dt.setHours(0,0,0,0);
-  dt.setDate(dt.getDate()+3-(dt.getDay()+6)%7);
-  var w1=new Date(dt.getFullYear(),0,4);
-  return 1+Math.round(((dt-w1)/86400000-3+(w1.getDay()+6)%7)/7);
-}
+function isoWk(y,m,d){var dt=new Date(y,m,d);dt.setHours(0,0,0,0);dt.setDate(dt.getDate()+3-(dt.getDay()+6)%7);var w1=new Date(dt.getFullYear(),0,4);return 1+Math.round(((dt-w1)/86400000-3+(w1.getDay()+6)%7)/7);}
+function filtP(incInact){var res=[],sl=ST.fSearch.toLowerCase();for(var i=0;i<ST.personnels.length;i++){var p=ST.personnels[i];if(!incInact&&p.inactive)continue;if(ST.fSvc&&p.service!==ST.fSvc)continue;if(ST.fGrp&&p.groupe!==ST.fGrp)continue;if(ST.fSearch&&p.nom.toLowerCase().indexOf(sl)===-1)continue;res.push(p);}res.sort((a,b)=>a.nom.localeCompare(b.nom));return res;}
+function getCalPidOpts() {var res=ST.personnels.filter(p=>!p.inactive&&(!ST.calSvc||p.service===ST.calSvc)).sort((a,b)=>a.nom.localeCompare(b.nom));var h="";for(var i=0;i<res.length;i++)h+='<option value="'+res[i].id+'"'+(ST.calPid==res[i].id?" selected":"")+'>'+res[i].nom+'</option>';return h;}
+function currWk(){var t=new Date(),d=(t.getDay()+6)%7,mon=new Date(t);mon.setDate(t.getDate()-d);var fri=new Date(mon);fri.setDate(mon.getDate()+4);return {mon:mon,fri:fri,wk:isoWk(mon.getFullYear(),mon.getMonth(),mon.getDate())};}
+function prevWk(){var t=currWk().mon;t.setDate(t.getDate()-7);var fri=new Date(t);fri.setDate(t.getDate()+4);return {mon:t,fri:fri,wk:isoWk(t.getFullYear(),t.getMonth(),t.getDate())};}
+function nextWk(){var t=currWk().mon;t.setDate(t.getDate()+7);var fri=new Date(t);fri.setDate(t.getDate()+4);return {mon:t,fri:fri,wk:isoWk(t.getFullYear(),t.getMonth(),t.getDate())};}
+function prevMo(){var pm=TODAY.getMonth()-1,py=TODAY.getFullYear();if(pm<0){pm=11;py--;}return {year:py,month:pm};}
+function evRange(y1,m1,d1,y2,m2,d2,fs,fg){var res=[],end=new Date(y2,m2,d2);for(var dt=new Date(y1,m1,d1);dt<=end;dt.setDate(dt.getDate()+1)){var y=dt.getFullYear(),m=dt.getMonth(),d=dt.getDate();for(var i=0;i<ST.personnels.length;i++){var p=ST.personnels[i];if(fs&&p.service!==fs)continue;if(fg&&p.groupe!==fg)continue;var k=eKey(p.id,y,m,d),ev=ST.events[k];if(ev){if(ev.type==='full'){res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.causeId,comment:ev.comment||"",period:'full'});}else if(ev.type==='half'){if(ev.am)res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.am.causeId,comment:ev.am.comment||"",period:'am'});if(ev.pm)res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.pm.causeId,comment:ev.pm.comment||"",period:'pm'});}}}}return res;}
+function scrollTd(){if(ST.year!==TODAY.getFullYear())return;var gc=document.querySelector(".gc"),td=document.querySelector(".ec.td");if(gc&&td){ST.ignoreScroll=true;gc.scrollTo({left:Math.max(0,td.offsetLeft-getNameColWidth()-(gc.clientWidth/2)+14),behavior:'smooth'});setTimeout(()=>{if(document.querySelector(".gc"))ST.lastScrollX=document.querySelector(".gc").scrollLeft;ST.ignoreScroll=false;},600);}}
+function exportCSV(fn,csv){var blob=new Blob([new Uint8Array([0xEF,0xBB,0xBF]),csv],{type:'text/csv;charset=utf-8;'});var link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=fn;document.body.appendChild(link);link.click();document.body.removeChild(link);showToast("Export CSV réussi");}
+function selOpts(arr,sel){var o="";for(var i=0;i<arr.length;i++)o+='<option value="'+arr[i]+'"'+(arr[i]===sel?" selected":"")+'>'+arr[i]+'</option>';return o;}
 
-function filtP(includeInactive){
-  var res=[];
-  var searchLower = ST.fSearch.toLowerCase();
-  for(var i=0;i<ST.personnels.length;i++){
-    var p=ST.personnels[i];
-    if(!includeInactive && p.inactive) continue;
-    if(ST.fSvc&&p.service!==ST.fSvc)continue;
-    if(ST.fGrp&&p.groupe!==ST.fGrp)continue;
-    if(ST.fSearch && p.nom.toLowerCase().indexOf(searchLower) === -1) continue; 
-    res.push(p);
-  }
-  res.sort(function(a, b) { return a.nom.localeCompare(b.nom); });
-  return res;
-}
-
-function getCalPidOpts() {
-    var res = ST.personnels.filter(function(p){
-        if(p.inactive) return false;
-        if(ST.calSvc && p.service !== ST.calSvc) return false;
-        return true;
-    });
-    res.sort(function(a,b){ return a.nom.localeCompare(b.nom); });
-    var html = "";
-    for(var i=0; i<res.length; i++) {
-        html += '<option value="'+res[i].id+'"'+(ST.calPid == res[i].id ? " selected" : "")+'>'+res[i].nom+'</option>';
-    }
-    return html;
-}
-
-function prevWk(){
-  var t=new Date(),d=(t.getDay()+6)%7;
-  var mon=new Date(t);mon.setDate(t.getDate()-d-7);
-  var fri=new Date(mon);fri.setDate(mon.getDate()+4);
-  return {mon:mon,fri:fri,wk:isoWk(mon.getFullYear(),mon.getMonth(),mon.getDate())};
-}
-
-function currWk(){
-  var t=new Date(),d=(t.getDay()+6)%7;
-  var mon=new Date(t);mon.setDate(t.getDate()-d); 
-  var fri=new Date(mon);fri.setDate(mon.getDate()+4);
-  return {mon:mon,fri:fri,wk:isoWk(mon.getFullYear(),mon.getMonth(),mon.getDate())};
-}
-
-function nextWk(){
-  var t=new Date(),d=(t.getDay()+6)%7;
-  var mon=new Date(t);mon.setDate(t.getDate()-d+7); 
-  var fri=new Date(mon);fri.setDate(mon.getDate()+4);
-  return {mon:mon,fri:fri,wk:isoWk(mon.getFullYear(),mon.getMonth(),mon.getDate())};
-}
-
-function prevMo(){
-  var pm=TODAY.getMonth()-1,py=TODAY.getFullYear();
-  if(pm<0){pm=11;py--;}
-  return {year:py,month:pm};
-}
-
-function evRange(y1,m1,d1,y2,m2,d2,fs,fg){
-  var res=[],end=new Date(y2,m2,d2);
-  for(var dt=new Date(y1,m1,d1);dt<=end;dt.setDate(dt.getDate()+1)){
-    var y=dt.getFullYear(),m=dt.getMonth(),d=dt.getDate();
-    for(var i=0;i<ST.personnels.length;i++){
-      var p=ST.personnels[i];
-      if(fs&&p.service!==fs)continue;
-      if(fg&&p.groupe!==fg)continue;
-      var k=eKey(p.id,y,m,d),ev=ST.events[k];
-      if(ev){
-          if (ev.type === 'full') {
-              res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.causeId,comment:ev.comment||"", period:'full'});
-          } else if (ev.type === 'half') {
-              if (ev.am) res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.am.causeId,comment:ev.am.comment||"", period:'am'});
-              if (ev.pm) res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.pm.causeId,comment:ev.pm.comment||"", period:'pm'});
-          }
-      }
-    }
-  }
-  return res;
-}
-
-// === POSITIONNEMENT INITIAL (JOUR ACTUEL) ===
-function scrollTd(){
-  if(ST.year!==TODAY.getFullYear()) return;
-  var gc=document.querySelector(".gc");
-  var todayEl=document.querySelector(".ec.td");
-  if(gc && todayEl){
-    var nameWidth = getNameColWidth();
-    var offset = todayEl.offsetLeft - nameWidth - (gc.clientWidth / 2) + 14;
-    gc.style.scrollBehavior = 'auto'; // instant jump
-    gc.scrollLeft = Math.max(0, offset);
-    ST.scrollPlanX = gc.scrollLeft;
-    ST.scrollPlanY = gc.scrollTop;
-    gc.style.scrollBehavior = 'smooth';
-  }
-}
-
-function exportCSV(filename, csvData) {
-  var blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvData], { type: 'text/csv;charset=utf-8;' }); 
-  var link = document.createElement("a");
-  var url = URL.createObjectURL(blob);
-  link.setAttribute("href", url);
-  link.setAttribute("download", filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  showToast("Export CSV réussi");
-}
-
-function selOpts(arr,selected){
-  var out="";
-  for(var i=0;i<arr.length;i++){out+='<option value="'+arr[i]+'"'+(arr[i]===selected?" selected":"")+'>'+arr[i]+'</option>';}
-  return out;
-}
-
-// === MISE À JOUR VISUELLE ISOLÉE DE LA CASE ===
+// === UPDATE VISUEL CASE ===
 function applyCellVisuals(ec, ev) {
-    ec.innerHTML = '';
-    ec.style.backgroundImage = '';
-    ec.style.backgroundColor = '';
-    ec.title = '';
+    ec.innerHTML = ''; ec.style.backgroundImage = ''; ec.style.backgroundColor = ''; ec.title = '';
     if(!ev) return;
-    
     if(ev.type === 'full') {
-        var col = cColor(ev.causeId);
-        ec.style.backgroundColor = col;
-        ec.title = cLabel(ev.causeId)+(ev.comment?"\n"+ev.comment:"");
-        ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
-        if(ev.comment && ev.comment.trim() && ev.comment!=="Import Excel"){ ec.innerHTML += '<span class="ev-dot"></span>'; }
+        ec.style.backgroundColor = cColor(ev.causeId); ec.title = cLabel(ev.causeId)+(ev.comment?"\n"+ev.comment:""); ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
+        if(ev.comment && ev.comment.trim() && ev.comment!=="Import Excel") ec.innerHTML += '<span class="ev-dot"></span>';
     } else if (ev.type === 'half') {
-        var amIsAst = ev.am && cLabel(ev.am.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
-        var pmIsAst = ev.pm && cLabel(ev.pm.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
-        var isHoriz = amIsAst || pmIsAst;
-        
-        var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
-        var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
-        
-        if (isHoriz) {
-            ec.style.backgroundImage = 'linear-gradient(to bottom, '+amCol+' 50%, '+pmCol+' 50%)';
-        } else {
-            ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
-        }
-        
-        var title = "";
-        var hasCmt = false;
-        
-        if(ev.am){
-            title += cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment ? " - "+ev.am.comment : "");
-            if(ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
-        }
-        if(ev.pm){
-            if(title) title += "\n";
-            title += cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment ? " - "+ev.pm.comment : "");
-            if(ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
-        }
-        
-        ec.title = title;
-        
-        if (isHoriz) {
-            var topLbl = ev.am ? cShort(ev.am.causeId) : '';
-            var botLbl = ev.pm ? cShort(ev.pm.causeId) : '';
-            ec.innerHTML = '<div style="display:flex; flex-direction:column; height:100%; width:100%; justify-content:space-evenly; align-items:center; font-size:10px; font-weight:900; color:white; text-shadow:0 1px 2px rgba(0,0,0,0.8); line-height:1; z-index:2;"><span>'+topLbl+'</span><span>'+botLbl+'</span></div>';
-        } else {
-            var lbls = [];
-            if(ev.am) lbls.push(cShort(ev.am.causeId));
-            if(ev.pm) lbls.push(cShort(ev.pm.causeId));
-            var fs = lbls.length > 1 ? "10px" : "12px";
-            var ls = lbls.length > 1 ? "-0.5px" : "normal";
-            ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
-        }
-        if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
+        var cAm = ev.am?cColor(ev.am.causeId):'transparent', cPm = ev.pm?cColor(ev.pm.causeId):'transparent';
+        var isH = (ev.am&&cLabel(ev.am.causeId).toUpperCase().indexOf('ASTREINTE')>-1) || (ev.pm&&cLabel(ev.pm.causeId).toUpperCase().indexOf('ASTREINTE')>-1);
+        ec.style.backgroundImage = isH ? 'linear-gradient(to bottom, '+cAm+' 50%, '+cPm+' 50%)' : 'linear-gradient(to bottom right, '+cAm+' 50%, '+cPm+' 50%)';
+        var t="", l=[], hc=false;
+        if(ev.am){ t+=cLabel(ev.am.causeId)+" (Matin)"+(ev.am.comment?" - "+ev.am.comment:""); l.push(cShort(ev.am.causeId)); if(ev.am.comment&&ev.am.comment!=="Import Excel")hc=true; }
+        if(ev.pm){ if(t)t+="\n"; t+=cLabel(ev.pm.causeId)+" (Aprem)"+(ev.pm.comment?" - "+ev.pm.comment:""); l.push(cShort(ev.pm.causeId)); if(ev.pm.comment&&ev.pm.comment!=="Import Excel")hc=true; }
+        ec.title = t;
+        if(isH) { ec.innerHTML='<div style="display:flex;flex-direction:column;height:100%;width:100%;justify-content:space-evenly;align-items:center;font-size:10px;font-weight:900;color:white;text-shadow:0 1px 2px rgba(0,0,0,0.8);line-height:1;z-index:2;"><span>'+(ev.am?cShort(ev.am.causeId):'')+'</span><span>'+(ev.pm?cShort(ev.pm.causeId):'')+'</span></div>'; } 
+        else { ec.innerHTML='<span class="ev-l" style="font-size:'+(l.length>1?'10px':'12px')+'; letter-spacing:'+(l.length>1?'-0.5px':'normal')+';">'+l.join('/')+'</span>'; }
+        if(hc) ec.innerHTML += '<span class="ev-dot"></span>';
     }
 }
-
-function updateCellVisual(ec, baseKey, y, mo, d) {
-    var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1);
-    var isCal = ec.classList.contains('cal-ec');
-    var cls2="ec" + (isCal ? " cal-ec" : "");
-    if(td)cls2+=" td";else if(fe)cls2+=" fe";else if(va)cls2+=" va";else if(we)cls2+=" we";
-    if(!isCal && (mon || d===1))cls2+=" ms";
-    ec.className=cls2;
-    
-    if(!ST.events[baseKey]) {
-        ec.innerHTML = '';
-        ec.style.backgroundImage = '';
-        ec.style.backgroundColor = '';
-        if(fe)ec.title="Jour férié";else if(va)ec.title="Vacances zone B"; else ec.title="";
-    } else {
-        applyCellVisuals(ec, ST.events[baseKey]);
-    }
+function updateCellVisual(ec, bk, y, mo, d) {
+    var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1), isCal=ec.classList.contains('cal-ec');
+    var cls="ec"+(isCal?" cal-ec":""); if(td)cls+=" td";else if(fe)cls+=" fe";else if(va)cls+=" va";else if(we)cls+=" we"; if(!isCal&&(mon||d===1))cls+=" ms"; ec.className=cls;
+    if(!ST.events[bk]) { ec.innerHTML=''; ec.style.backgroundImage=''; ec.style.backgroundColor=''; ec.title=fe?"Jour férié":va?"Vacances zone B":""; } else { applyCellVisuals(ec, ST.events[bk]); }
 }
 
-// === GESTION DU GLISSER-DEPOSER (Drag & Paint) ===
+// === DRAG & DROP ===
 function updateDragHighlight() {
-    document.querySelectorAll('.drag-hl').forEach(function(el) { el.classList.remove('drag-hl'); });
+    document.querySelectorAll('.drag-hl').forEach(el=>el.classList.remove('drag-hl'));
     if(!ST.drag.active) return;
-    
-    var minDt = Math.min(ST.drag.startDt, ST.drag.endDt);
-    var maxDt = Math.max(ST.drag.startDt, ST.drag.endDt);
-    
-    var ecs = document.querySelectorAll(".ec[data-pid='"+ST.drag.pid+"']");
-    for(var i=0; i<ecs.length; i++) {
-        var mo = parseInt(ecs[i].getAttribute("data-month"));
-        var day = parseInt(ecs[i].getAttribute("data-day"));
-        var dt = new Date(ST.year, mo, day).getTime();
-        if(dt >= minDt && dt <= maxDt) {
-            ecs[i].classList.add('drag-hl');
-        }
-    }
+    var minDt = Math.min(ST.drag.startDt, ST.drag.endDt), maxDt = Math.max(ST.drag.startDt, ST.drag.endDt);
+    document.querySelectorAll(".ec[data-pid='"+ST.drag.pid+"']").forEach(ec => {
+        var dt = new Date(ST.year, parseInt(ec.getAttribute("data-month")), parseInt(ec.getAttribute("data-day"))).getTime();
+        if(dt >= minDt && dt <= maxDt) ec.classList.add('drag-hl');
+    });
 }
-
 function processDragSelection() {
-    var minDt = Math.min(ST.drag.startDt, ST.drag.endDt);
-    var maxDt = Math.max(ST.drag.startDt, ST.drag.endDt);
-    var pid = ST.drag.pid;
-    
-    var upserts = [];
-    var deletes = [];
-    var conflicts = 0;
-
-    for(var d = new Date(minDt); d.getTime() <= maxDt; d.setDate(d.getDate()+1)) {
-        var mo = d.getMonth();
-        var day = d.getDate();
-        var baseKey = eKey(pid, ST.year, mo, day);
-        var existing = ST.events[baseKey];
-
-        if (ST.selectedCauseId === 'erase') {
-            if (existing) {
-                delete ST.events[baseKey];
-                deletes.push(baseKey, baseKey+'-am', baseKey+'-pm');
+    var minDt = Math.min(ST.drag.startDt, ST.drag.endDt), maxDt = Math.max(ST.drag.startDt, ST.drag.endDt), pid = ST.drag.pid, up = [], del = [], cf = 0, cur = new Date(minDt);
+    while(cur.getTime() <= maxDt) {
+        var mo=cur.getMonth(), day=cur.getDate(), bk=eKey(pid, ST.year, mo, day), ex=ST.events[bk];
+        if (ST.selectedCauseId === 'erase') { if(ex){delete ST.events[bk]; del.push(bk, bk+'-am', bk+'-pm');} } 
+        else {
+            var tp=ST.selectedPeriod, cObj=ST.causes.find(c=>c.id===ST.selectedCauseId), isA=cObj&&cObj.label.toUpperCase().indexOf('ASTREINTE')>-1; if(isA)tp='am';
+            var cfl=false, bp=false;
+            if(tp==='am'&&isA&&ex&&ex.type==='full'){ ST.events[bk]={type:'half',am:{causeId:ST.selectedCauseId,comment:''},pm:{causeId:ex.causeId,comment:ex.comment}}; up.push({id:bk+'-am',cause_id:ST.selectedCauseId,comment:''},{id:bk+'-pm',cause_id:ex.causeId,comment:ex.comment}); del.push(bk); bp=true; }
+            else if(tp==='full'&&ex&&ex.type==='half'&&(!ex.am||!ex.pm)){
+                var eAA=ex.am&&ST.causes.find(c=>c.id===ex.am.causeId)?.label.toUpperCase().indexOf('ASTREINTE')>-1;
+                var ePA=ex.pm&&ST.causes.find(c=>c.id===ex.pm.causeId)?.label.toUpperCase().indexOf('ASTREINTE')>-1;
+                if(eAA&&!ex.pm){ ST.events[bk].pm={causeId:ST.selectedCauseId,comment:''}; up.push({id:bk+'-pm',cause_id:ST.selectedCauseId,comment:''}); bp=true; }
+                else if(ePA&&!ex.am){ ST.events[bk].am={causeId:ST.selectedCauseId,comment:''}; up.push({id:bk+'-am',cause_id:ST.selectedCauseId,comment:''}); bp=true; }
             }
-        } else {
-            var targetPeriod = ST.selectedPeriod;
-            var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
-            var isAstreinte = causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1;
-            if(isAstreinte) targetPeriod = 'am';
-
-            var conflict = false;
-            var bypassSpecial = false;
-
-            if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
-                var oldCause = existing.causeId;
-                var oldCmt = existing.comment;
-                ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
-                upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                upserts.push({id: baseKey+'-pm', cause_id: oldCause, comment: oldCmt});
-                deletes.push(baseKey);
-                bypassSpecial = true;
-            }
-            else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
-                var exAmAst = false, exPmAst = false;
-                if(existing.am) {
-                    var cObj1 = ST.causes.find(function(c){return c.id === existing.am.causeId;});
-                    if(cObj1 && cObj1.label.toUpperCase().indexOf('ASTREINTE') > -1) exAmAst = true;
-                }
-                if(existing.pm) {
-                    var cObj2 = ST.causes.find(function(c){return c.id === existing.pm.causeId;});
-                    if(cObj2 && cObj2.label.toUpperCase().indexOf('ASTREINTE') > -1) exPmAst = true;
-                }
-                if (exAmAst && !existing.pm) {
-                    ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
-                    upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                    bypassSpecial = true;
-                } else if (exPmAst && !existing.am) {
-                    ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
-                    upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                    bypassSpecial = true;
-                }
-            }
-
-            if (!bypassSpecial) {
-                if (targetPeriod === 'full') { if (existing) conflict = true; }
-                else if (targetPeriod === 'am') { if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true; }
-                else if (targetPeriod === 'pm') { if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true; }
-
-                if (conflict) {
-                    conflicts++;
-                    continue; 
-                }
-
-                if (targetPeriod === 'full') {
-                    ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
-                    upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
-                    deletes.push(baseKey+'-am', baseKey+'-pm');
-                } else if (targetPeriod === 'am') {
-                    if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
-                    ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
-                    upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                    if(existing && existing.pm) deletes.push(baseKey);
-                } else if (targetPeriod === 'pm') {
-                    if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
-                    ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
-                    upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                    if(existing && existing.am) deletes.push(baseKey);
+            if(!bp){
+                if(tp==='full'){if(ex)cfl=true;}else if(tp==='am'){if(ex&&(ex.type==='full'||(ex.type==='half'&&ex.am)))cfl=true;}else if(tp==='pm'){if(ex&&(ex.type==='full'||(ex.type==='half'&&ex.pm)))cfl=true;}
+                if(cfl){ cf++; } else {
+                    if(tp==='full'){ ST.events[bk]={type:'full',causeId:ST.selectedCauseId,comment:''}; up.push({id:bk,cause_id:ST.selectedCauseId,comment:''}); del.push(bk+'-am',bk+'-pm'); }
+                    else if(tp==='am'){ if(!ex)ST.events[bk]={type:'half',am:null,pm:null}; ST.events[bk].am={causeId:ST.selectedCauseId,comment:''}; up.push({id:bk+'-am',cause_id:ST.selectedCauseId,comment:''}); if(ex&&ex.pm)del.push(bk); }
+                    else if(tp==='pm'){ if(!ex)ST.events[bk]={type:'half',am:null,pm:null}; ST.events[bk].pm={causeId:ST.selectedCauseId,comment:''}; up.push({id:bk+'-pm',cause_id:ST.selectedCauseId,comment:''}); if(ex&&ex.am)del.push(bk); }
                 }
             }
         }
-        
-        // Update direct visual (for speed)
-        var ec = document.querySelector('.ec[data-key="'+baseKey+'"]');
-        if(ec) updateCellVisual(ec, baseKey, ST.year, mo, day);
+        var ec = document.querySelector('.ec[data-key="'+bk+'"]'); if(ec) updateCellVisual(ec, bk, ST.year, mo, day);
+        cur.setDate(cur.getDate() + 1);
     }
-    
-    if(conflicts > 0) showToast(conflicts + " case(s) ignorée(s) car déjà remplie(s).", true);
-    if(upserts.length > 0 || deletes.length > 0) {
-        saveEvsDB(upserts, deletes);
-    }
+    if(cf>0)showToast(cf+" case(s) ignorée(s) car déjà remplie(s).", true);
+    if(up.length>0||del.length>0)saveEvsDB(up, del);
 }
 
-// Global Drag Events
-document.addEventListener("mousedown", function(e) {
-    if (e.button !== 0 || !ST.selectedCauseId) return; // Seulement clic gauche avec un motif sélectionné
-    var ec = e.target.closest('.ec[data-pid]');
-    if (ec) {
-        e.preventDefault(); // Stop text selection
-        var pid = parseInt(ec.getAttribute("data-pid"));
-        var day = parseInt(ec.getAttribute("data-day"));
-        var mo = parseInt(ec.getAttribute("data-month"));
-        if(pid && day) {
-            ST.drag.active = true;
-            ST.drag.pid = pid;
-            ST.drag.startDt = new Date(ST.year, mo, day).getTime();
-            ST.drag.endDt = ST.drag.startDt;
-            updateDragHighlight();
-        }
-    }
-});
+// === LOGIN ===
+function renderLogin() {
+    var opts='<option value="">-- Sélectionnez votre nom --</option>'; ST.personnels.filter(p=>!p.inactive).sort((a,b)=>a.nom.localeCompare(b.nom)).forEach(p=>opts+='<option value="'+p.id+'">'+p.nom+'</option>');
+    document.getElementById("app").innerHTML=`<div style="display:flex;flex-direction:column;height:100dvh;align-items:center;justify-content:center;background:var(--bg3);padding:20px;"><div style="margin-bottom:30px;display:flex;flex-direction:column;align-items:center;"><div style="width:60px;height:56px;margin-bottom:10px;"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></div><h1 style="font-size:24px;font-weight:800;color:var(--tx1);">Planning Usine</h1></div><div style="background:var(--bg1);padding:32px;border-radius:12px;border:1px solid var(--bd1);box-shadow:0 10px 25px rgba(0,0,0,0.05);width:100%;max-width:400px;text-align:center;"><div id="userLoginBlock"><label style="display:block;text-align:left;margin-bottom:8px;font-weight:700;font-size:13px;color:var(--tx2);">Votre profil :</label><select id="loginPid" style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--bd1);background:var(--bg2);margin-bottom:16px;font-size:14px;outline:none;">${opts}</select><div id="pwdBlock" style="display:none;text-align:left;"><label id="pwdLabel" style="display:block;margin-bottom:8px;font-weight:700;font-size:13px;color:var(--tx2);">Mot de passe :</label><input type="password" id="loginPwd" style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--bd1);background:var(--bg1);margin-bottom:24px;font-size:14px;outline:none;"><button id="loginBtn" class="btn p" style="width:100%;padding:14px;font-size:15px;">Se connecter</button></div></div><div id="adminLoginBlock" style="display:none;text-align:left;"><label style="display:block;margin-bottom:8px;font-weight:700;font-size:13px;color:var(--tx2);">Code Administrateur :</label><input type="password" id="adminPwd" style="width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--bd1);background:var(--bg1);margin-bottom:24px;font-size:14px;outline:none;"><button id="adminLoginBtn" class="btn p" style="width:100%;padding:14px;font-size:15px;background:#1e40af;border-color:#1e40af;">Connexion Admin</button></div><div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--bd1);"><a href="#" id="toggleAdmin" style="color:var(--tx3);font-size:12px;text-decoration:none;font-weight:600;">Accès Administrateur</a></div></div></div>`;
+    document.getElementById('loginPid').addEventListener('change', function(e) {
+        var pid=e.target.value, b=document.getElementById('pwdBlock'), lb=document.getElementById('loginBtn'), pL=document.getElementById('pwdLabel'), pw=document.getElementById('loginPwd'); pw.value="";
+        if(!pid){b.style.display='none';return;} var p=ST.personnels.find(x=>String(x.id)===String(pid)); b.style.display='block'; pw.focus();
+        if(p.pwd){pL.textContent="Mot de passe :";lb.textContent="Se connecter";lb.dataset.mode="login";}else{pL.textContent="Créez votre mot de passe :";lb.textContent="Créer mon compte";lb.dataset.mode="create";}
+    });
+    document.getElementById('loginBtn').addEventListener('click', function() {
+        var pid=document.getElementById('loginPid').value, pwd=document.getElementById('loginPwd').value.trim(); if(!pid||!pwd){showToast("Veuillez remplir tous les champs",true);return;}
+        var p=ST.personnels.find(x=>String(x.id)===String(pid));
+        if(this.dataset.mode==="create"){p.pwd=pwd;saveConfig();localStorage.setItem('artt-user',pid);ST.currentUser=pid;ST.calPid=pid;renderApp();showToast("Compte créé !");setTimeout(scrollTd,300);}
+        else{if(p.pwd===pwd){localStorage.setItem('artt-user',pid);ST.currentUser=pid;ST.calPid=pid;renderApp();showToast("Connexion réussie !");setTimeout(scrollTd,300);}else{showToast("Mot de passe incorrect",true);}}
+    });
+    document.getElementById('loginPwd').addEventListener('keypress', e=>{if(e.key==='Enter')document.getElementById('loginBtn').click();});
+    document.getElementById('toggleAdmin').addEventListener('click', function(e) { e.preventDefault(); var u=document.getElementById('userLoginBlock'),a=document.getElementById('adminLoginBlock'); if(u.style.display==='none'){u.style.display='block';a.style.display='none';this.textContent="Accès Administrateur";}else{u.style.display='none';a.style.display='block';this.textContent="Retour Espace Employés";document.getElementById('adminPwd').focus();} });
+    document.getElementById('adminLoginBtn').addEventListener('click', function() { var pwd=document.getElementById('adminPwd').value.trim(); if(pwd==="2214"){localStorage.setItem('artt-user','admin');ST.isAdmin=true;ST.currentUser='admin';ST.tab='personnel';renderApp();showToast("Mode Administrateur activé");setTimeout(scrollTd,300);}else{showToast("Code Admin incorrect",true);} });
+    document.getElementById('adminPwd').addEventListener('input', e=>{if(e.target.value.trim()==="2214")document.getElementById('adminLoginBtn').click();});
+}
 
-document.addEventListener("mouseover", function(e) {
-    if(!ST.drag.active) return;
-    var ec = e.target.closest('.ec[data-pid]');
-    if (ec) {
-        var pid = parseInt(ec.getAttribute("data-pid"));
-        if(pid === ST.drag.pid) {
-            var day = parseInt(ec.getAttribute("data-day"));
-            var mo = parseInt(ec.getAttribute("data-month"));
-            ST.drag.endDt = new Date(ST.year, mo, day).getTime();
-            updateDragHighlight();
-        }
-    }
-});
-
-document.addEventListener("mouseup", function(e) {
-    if(e.button === 0 && ST.drag.active) {
-        ST.drag.active = false;
-        processDragSelection();
-        updateDragHighlight(); // Efface la surbrillance
-    }
-});
-
-// === RENDU PRINCIPAL & GESTION TOTALE SANS RECHARGEMENT ===
+// === RENDER ===
 function renderApp(){
-  var activeElId = document.activeElement ? document.activeElement.id : null;
-  var selStart = document.activeElement ? document.activeElement.selectionStart : null;
+  if (ST.loaded && !ST.isAdmin && !ST.currentUser) { var s=localStorage.getItem('artt-user'); if(s==='admin'){ST.isAdmin=true;ST.currentUser='admin';}else if(s&&ST.personnels.find(p=>String(p.id)===s)){ST.currentUser=s;if(!ST.calPid)ST.calPid=s;}else{renderLogin();return;} }
+  var gc=document.querySelector(".gc")||document.querySelector(".cal-wrapper"); if(gc){ST.lastScrollX=gc.scrollLeft;ST.lastScrollY=gc.scrollTop;ST.ignoreScroll=true;}
+  var app=document.getElementById("app"); app.innerHTML="";
   
-  var gcElemBefore = document.querySelector(".gc") || document.querySelector(".cal-wrapper");
-  var savedX = ST.lastScrollX || 0;
-  var savedY = ST.lastScrollY || 0;
-  if(gcElemBefore) {
-      savedX = gcElemBefore.scrollLeft;
-      savedY = gcElemBefore.scrollTop;
-      ST.lastScrollX = savedX;
-      ST.lastScrollY = savedY;
-      ST.ignoreScroll = true; // Lock scroll updates BEFORE destroying DOM
-  }
-
-  var app=document.getElementById("app");
-  app.innerHTML="";
+  var tb=`<div class="topbar"><div class="logo-container"><div style="display:flex;justify-content:center;align-items:center;height:38px;margin-bottom:4px;"><img src="Alpro_FullLogo_Raster_RGB.jpg" alt="Logo" style="height:100%;width:auto;object-fit:contain;border-radius:4px;"></div><span style="font-size:12px;font-weight:800;color:var(--primary);letter-spacing:-0.2px;">Usine de Villecomtal</span></div><div class="sync-indicator"><div class="sync-dot ${ST.loaded?"ok":"spin"}" id="sD"></div><span id="sL">${ST.loaded?"Synchronisé":"Chargement..."}</span></div><div class="year-nav"><button id="pY">&lt;</button><span>Planning Usine ${ST.year}</span><button id="nY">&gt;</button></div><div class="nav-tabs"><button class="nav-tab${ST.tab==='planning'?' active':''}" data-tab="planning">Planning global</button><button class="nav-tab${ST.tab==='calendrier'?' active':''}" data-tab="calendrier">Calendrier personnel</button><button class="nav-tab" id="themeToggle" title="Mode Sombre / Clair">${document.documentElement.getAttribute('data-theme')==='dark'?'☀️ Clair':'🌙 Sombre'}</button>${ST.isAdmin?`<button class="nav-tab${ST.tab==='personnel'?' active':''}" data-tab="personnel">Personnel</button><button class="nav-tab${ST.tab==='parametres'?' active':''}" data-tab="parametres">Paramètres</button><button class="nav-tab" id="lockBtn" style="padding:10px;" title="Verrouiller l'accès">🔒</button>`:`<input type="password" id="adminCode" placeholder="Code Admin..." maxlength="4" style="width:110px;padding:10px 12px;border:1px solid var(--bd1);border-radius:8px;font-size:14px;background:var(--bg2);">`}<button class="nav-tab" id="logoutBtn" style="color:#E24B4A;border-color:#fca5a5;background:#fef2f2;">Déconnexion</button></div><div class="bilan-btns"><button class="bilan-btn" id="bS0" style="background:var(--bg2);color:var(--tx1);">&#128337; Absent cette semaine</button><button class="bilan-btn" id="bS_next" style="background:var(--bg2);color:var(--tx1);">&#128337; Absent la semaine prochaine</button><button class="bilan-btn" id="bS1">&#128337; Bilan S-1</button><button class="bilan-btn" id="bM1">&#128337; Bilan M-1</button><button class="bilan-btn" id="bAn">&#9998; Bilan global ${ST.year}</button><button class="bilan-btn" id="bHelp" style="background:#3B82F6;color:white;border-color:#3B82F6;">❓ Tuto</button></div></div>`;
+  app.innerHTML=tb;
   
-  var tb=document.createElement("div");tb.className="topbar";
-  var syncCls="sync-dot "+(ST.loaded?"ok":"spin");
-  var syncTxt=ST.loaded?"Synchronisé":"Chargement...";
-  var parts=[];
+  if (ST.loaded) {
+      var ct=document.createElement("div");ct.className="content";
+      if(ST.tab==="planning") ct.appendChild(rPlanning()); else if(ST.tab==="calendrier") ct.appendChild(rCalendrier()); else if(ST.tab==="personnel") ct.appendChild(rPersonnel()); else ct.appendChild(rParametres());
+      app.appendChild(ct);
+  } else { app.innerHTML += '<div class="content"><div style="display:flex;height:100%;align-items:center;justify-content:center;color:var(--tx3);font-size:16px;">Chargement de la base de données...</div></div>'; }
   
-  // LOGO ALPRO DEPUIS GITHUB
-  parts.push('<div class="logo-container">'
-             + '<div style="display:flex; justify-content:center; align-items:center; height:38px; margin-bottom:4px;">'
-             + '<img src="Alpro_FullLogo_Raster_RGB.jpg" alt="Logo Alpro" style="height:100%; width:auto; object-fit:contain; border-radius:4px;">'
-             + '</div>'
-             + '<span style="font-size:12px;font-weight:800;color:var(--primary);letter-spacing:-0.2px;">Usine de Villecomtal</span>'
-             + '</div>');
-             
-  parts.push('<div class="sync-indicator"><div class="'+syncCls+'" id="sD"></div><span id="sL">'+syncTxt+'</span></div>');
-  parts.push('<div class="year-nav"><button id="pY">&lt;</button><span>Planning Usine '+ST.year+'</span><button id="nY">&gt;</button></div>');
+  bindAppEvents(); renderModals();
   
-  parts.push('<div class="nav-tabs">');
-  parts.push('<button class="nav-tab'+(ST.tab==='planning'?' active':'')+'" data-tab="planning">Planning global</button>');
-  parts.push('<button class="nav-tab'+(ST.tab==='calendrier'?' active':'')+'" data-tab="calendrier">Calendrier personnel</button>');
-  
-  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  parts.push('<button class="nav-tab" id="themeToggle" title="Mode Sombre / Clair">' + (isDark ? '☀️ Clair' : '🌙 Sombre') + '</button>');
-
-  if (ST.isAdmin) {
-      parts.push('<button class="nav-tab'+(ST.tab==='personnel'?' active':'')+'" data-tab="personnel">Personnel</button>');
-      parts.push('<button class="nav-tab'+(ST.tab==='parametres'?' active':'')+'" data-tab="parametres">Paramètres</button>');
-      parts.push('<button class="nav-tab" id="lockBtn" style="padding:10px;" title="Verrouiller l\'accès (Admin)">🔒</button>');
-  } else {
-      parts.push('<input type="password" id="adminCode" placeholder="Code Admin..." maxlength="4" style="width:110px; padding:10px 12px; border:1px solid var(--bd1); border-radius:8px; font-size:14px; background:var(--bg2);">');
-  }
-  
-  parts.push('</div>');
-  
-  parts.push('<div class="bilan-btns">');
-  parts.push('<button class="bilan-btn" id="bS0" style="background:var(--bg2); color:var(--tx1);">&#128337; Absent cette semaine</button>');
-  parts.push('<button class="bilan-btn" id="bS_next" style="background:var(--bg2); color:var(--tx1);">&#128337; Absent la semaine prochaine</button>');
-  parts.push('<button class="bilan-btn" id="bS1">&#128337; Bilan S-1</button>');
-  parts.push('<button class="bilan-btn" id="bM1">&#128337; Bilan M-1</button>');
-  parts.push('<button class="bilan-btn" id="bAn">&#9998; Bilan global '+ST.year+'</button>');
-  parts.push('<button class="bilan-btn" id="bHelp" style="background:#3B82F6; color:white; border-color:#3B82F6;">❓ Tuto</button>');
-  parts.push('</div>');
-  
-  tb.innerHTML=parts.join('');
-  app.appendChild(tb);
-  
-  var ct=document.createElement("div");ct.className="content";
-  if(ST.tab==="planning") ct.appendChild(rPlanning());
-  else if(ST.tab==="calendrier") ct.appendChild(rCalendrier());
-  else if(ST.tab==="personnel") ct.appendChild(rPersonnel());
-  else ct.appendChild(rParametres());
-  app.appendChild(ct);
-  
-  // Appels Évènements Principaux (hors modales)
-  bindAppEvents();
-  renderModals();
-
-  // RESTAURATION DU SCROLL ABSOLUMENT SÉCURISÉE
-  var gcElemAfter = document.querySelector(".gc");
-  var calElemAfter = document.querySelector(".cal-wrapper");
-  var targetElem = gcElemAfter || calElemAfter;
-
+  var targetElem = document.querySelector(".gc") || document.querySelector(".cal-wrapper");
   if(targetElem) {
-      var savedX = ST.tab === 'planning' ? ST.scrollPlanX : ST.scrollCalX;
-      var savedY = ST.tab === 'planning' ? ST.scrollPlanY : ST.scrollCalY;
-
-      targetElem.style.scrollBehavior = 'auto'; // Disable smooth scroll for instant restore
-      void targetElem.offsetHeight; // Force reflow
-      targetElem.scrollLeft = savedX;
-      targetElem.scrollTop = savedY;
-      
-      requestAnimationFrame(function() {
-          if(targetElem) {
-              targetElem.scrollLeft = savedX;
-              targetElem.scrollTop = savedY;
-              targetElem.style.scrollBehavior = 'smooth';
-              
-              // Update month highlight correctly for planning
-              if(ST.tab === 'planning') {
-                  updateMonthHighlight(savedX);
-              }
-              
-              setTimeout(function(){ ST.ignoreScroll = false; }, 50);
-          } else {
-              ST.ignoreScroll = false;
-          }
-      });
-  } else {
-      ST.ignoreScroll = false;
-  }
-
-  if(activeElId) {
-    var el = document.getElementById(activeElId);
-    if(el) {
-      el.focus();
-      if(selStart !== null && el.setSelectionRange) el.setSelectionRange(selStart, selStart);
-    }
-  }
+      var sx = ST.tab === 'planning' ? ST.scrollPlanX : ST.scrollCalX, sy = ST.tab === 'planning' ? ST.scrollPlanY : ST.scrollCalY;
+      targetElem.style.scrollBehavior = 'auto'; targetElem.scrollLeft = sx; targetElem.scrollTop = sy;
+      requestAnimationFrame(()=>{ if(targetElem){ targetElem.scrollLeft = sx; targetElem.scrollTop = sy; targetElem.style.scrollBehavior = 'smooth'; if(ST.tab === 'planning') updateMonthHighlight(sx); setTimeout(()=>{ ST.ignoreScroll = false; }, 50); } else { ST.ignoreScroll = false; } });
+  } else { ST.ignoreScroll = false; }
 }
 
 function updateMonthHighlight(sl) {
-    var activeM = 0;
-    for(var m=11; m>=0; m--) {
-        var el = document.getElementById("m-start-" + m);
-        if(el && (el.offsetLeft - getNameColWidth()) <= sl + 150) { 
-            activeM = m;
-            break;
-        }
-    }
-    document.querySelectorAll(".month-btn").forEach(function(b) {
-        if(parseInt(b.getAttribute("data-month")) === activeM) b.classList.add("active");
-        else b.classList.remove("active");
-    });
+    var activeM = 0; for(var m=11; m>=0; m--) { var el = document.getElementById("m-start-" + m); if(el && (el.offsetLeft - getNameColWidth()) <= sl + 150) { activeM = m; break; } }
+    document.querySelectorAll(".month-btn").forEach(b => { if(parseInt(b.getAttribute("data-month")) === activeM) b.classList.add("active"); else b.classList.remove("active"); });
 }
 
 function renderModals() {
-    var mc = document.getElementById("modal-container");
-    if(!mc) {
-        mc = document.createElement("div");
-        mc.id = "modal-container";
-        document.body.appendChild(mc);
-    }
-    mc.innerHTML = "";
-    
-    if(ST.modal) mc.appendChild(rModal());
-    if(ST.eModal) mc.appendChild(rEModal());
-    if(ST.pModal) mc.appendChild(rPModal());
-    if(ST.svcModal) mc.appendChild(rSvcModal());
-    if(ST.grpModal) mc.appendChild(rGrpModal());
-    if(ST.bModal) mc.appendChild(rBilan());
-    if(ST.tutoModal) mc.appendChild(rTutoModal());
-    
+    var mc = document.getElementById("modal-container"); if(!mc) { mc = document.createElement("div"); mc.id = "modal-container"; document.body.appendChild(mc); } mc.innerHTML = "";
+    if(ST.modal) mc.appendChild(rModal()); if(ST.eModal) mc.appendChild(rEModal()); if(ST.pModal) mc.appendChild(rPModal()); if(ST.svcModal) mc.appendChild(rSvcModal()); if(ST.grpModal) mc.appendChild(rGrpModal()); if(ST.bModal) mc.appendChild(rBilan()); if(ST.tutoModal) mc.appendChild(rTutoModal());
     bindModalEvents();
 }
 
 function getLegendBarHTML() {
-  var html = '<div class="legend-bar">';
-  html += '<div class="legend-pill-container">';
-  html += '<div style="font-size:14px; font-weight:800; color:var(--tx2); margin-right:8px;">🖌️ Saisie rapide :</div>';
-  
-  var activeErase = (ST.selectedCauseId === 'erase') ? ' active' : '';
-  var styleErase = (ST.selectedCauseId === 'erase') ? 'background:#fce7f3;color:#db2777;border-color:#db2777;' : 'background:#fce7f3;color:#db2777;';
-  html += '<button class="legend-pill' + activeErase + '" style="' + styleErase + '" data-cause="erase"><span style="font-size:13px">🧽</span> Gomme</button>';
-
-  for(var i=0; i<ST.causes.length; i++){
-    var c = ST.causes[i];
-    var activeC = (ST.selectedCauseId === c.id) ? ' active' : '';
-    var styleC = (ST.selectedCauseId === c.id) ? 'background:'+c.color+'22;color:'+c.color+';border-color:'+c.color+';' : 'background:'+c.color+'22;color:'+c.color+';';
-    html += '<button class="legend-pill' + activeC + '" style="' + styleC + '" data-cause="' + c.id + '">' + c.label + ' (' + c.id + ')</button>';
-  }
-  html += '</div>';
-  
-  html += '<div class="legend-extras">';
-  html += '<div class="leg-item"><div class="leg-swatch" style="background:#fde68a"></div>Férié</div>';
-  html += '<div class="leg-item"><div class="leg-swatch" style="background:#dbeafe"></div>Vacances</div>';
-  html += '<div class="leg-item"><div class="leg-swatch" style="background:#bbf7d0"></div>Auj.</div>';
-  html += '</div>';
-  html += '</div>';
-  return html;
+  var html = '<div class="legend-bar"><div class="legend-pill-container"><div style="font-size:14px; font-weight:800; color:var(--tx2); margin-right:8px;">🖌️ Saisie rapide :</div><button class="legend-pill' + (ST.selectedCauseId === 'erase' ? ' active' : '') + '" style="background:#fce7f3;color:#db2777;' + (ST.selectedCauseId === 'erase' ? 'border-color:#db2777;' : '') + '" data-cause="erase"><span style="font-size:13px">🧽</span> Gomme</button>';
+  ST.causes.forEach(c => { html += '<button class="legend-pill' + (ST.selectedCauseId === c.id ? ' active' : '') + '" style="background:'+c.color+'22;color:'+c.color+';' + (ST.selectedCauseId === c.id ? 'border-color:'+c.color+';' : '') + '" data-cause="' + c.id + '">' + c.label + ' (' + c.id + ')</button>'; });
+  html += '</div><div class="legend-extras"><div class="leg-item"><div class="leg-swatch" style="background:#fde68a"></div>Férié</div><div class="leg-item"><div class="leg-swatch" style="background:#dbeafe"></div>Vacances</div><div class="leg-item"><div class="leg-swatch" style="background:#bbf7d0"></div>Auj.</div></div></div>'; return html;
 }
 
 function rPlanning(){
-  var div=document.createElement("div");div.className="planning";
-  div.innerHTML = getLegendBarHTML();
-  
-  var pt = '<div class="period-toggles" style="margin-left:10px;">'
-          + '<button class="period-btn'+(ST.selectedPeriod==='full'?' active':'')+'" data-period="full" title="Journée entière">Jour</button>'
-          + '<button class="period-btn'+(ST.selectedPeriod==='am'?' active':'')+'" data-period="am" title="Matin (Demi-case Haut/Gauche)">Matin</button>'
-          + '<button class="period-btn'+(ST.selectedPeriod==='pm'?' active':'')+'" data-period="pm" title="Après-midi (Demi-case Bas/Droite)">Aprem</button>'
-          + '</div>';
-  
+  var div=document.createElement("div");div.className="planning"; div.innerHTML = getLegendBarHTML();
   var mn=document.createElement("div");mn.className="month-nav";
-  var mf=document.createElement("div");mf.className="month-filters";
-  mf.innerHTML='<select id="fSvc"><option value="">Tous les services</option>'+selOpts(ST.services,ST.fSvc)+'</select>'
-              +'<select id="fGrp"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,ST.fGrp)+'</select>'
-              +'<input type="text" id="fSearch" class="search-input" style="margin-left:10px; width:200px;" placeholder="🔎 Rechercher un employé..." value="'+ST.fSearch+'">'
-              + pt;
-  mn.appendChild(mf);
-
-  var mbWrap=document.createElement("div");mbWrap.className="month-btns-wrap";
-  for(var i=0;i<MO.length;i++){
-    var b=document.createElement("button");
-    b.className="month-btn"; 
-    b.setAttribute("data-month",i);b.textContent=MO[i];mbWrap.appendChild(b);
-  }
-  mn.appendChild(mbWrap);
-  div.appendChild(mn);
-  
-  var gc=document.createElement("div");gc.className="gc";
-  gc.appendChild(buildGrid());
-  div.appendChild(gc);
-  
-  return div;
+  mn.innerHTML='<div class="month-filters"><select id="fSvc"><option value="">Tous les services</option>'+selOpts(ST.services,ST.fSvc)+'</select><select id="fGrp"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,ST.fGrp)+'</select><input type="text" id="fSearch" class="search-input" style="margin-left:10px; width:200px;" placeholder="🔎 Rechercher un employé..." value="'+ST.fSearch+'"><div class="period-toggles" style="margin-left:10px;"><button class="period-btn'+(ST.selectedPeriod==='full'?' active':'')+'" data-period="full">Jour</button><button class="period-btn'+(ST.selectedPeriod==='am'?' active':'')+'" data-period="am">Matin</button><button class="period-btn'+(ST.selectedPeriod==='pm'?' active':'')+'" data-period="pm">Aprem</button></div></div><div class="month-btns-wrap">'+MO.map((m,i)=>`<button class="month-btn" data-month="${i}">${m}</button>`).join('')+'</div>';
+  div.appendChild(mn); var gc=document.createElement("div");gc.className="gc"; gc.appendChild(buildGrid()); div.appendChild(gc); return div;
 }
 
 function buildGrid(){
-  var y=ST.year,ps=filtP();
-  var wgs=[], cw=null;
-  
-  for(var mo=0; mo<12; mo++){
-      var nd=dim(y,mo);
-      for(var d=1;d<=nd;d++){
-        var wk=isoWk(y,mo,d);
-        if(!cw||cw.wk!==wk){
-            if(cw)wgs.push(cw);
-            cw={wk:wk,cnt:0,mos:{}};
-        }
-        cw.cnt++;
-        cw.mos[mo] = true;
-      }
-  }
-  if(cw)wgs.push(cw);
-  
-  var grid=document.createElement("div");grid.className="grid";
-  var hdr=document.createElement("div");hdr.className="ghdr";
-  var wr=document.createElement("div");wr.className="ghdr-w";
-  
-  var sw=document.createElement("div");sw.className="stub-w";
-  sw.innerHTML='<div style="font-weight:600;font-size:12px">'+ps.length+' employé(s)</div><div style="font-size:10px;color:var(--tx3);margin-top:2px">Année '+y+'</div>';
-  wr.appendChild(sw);
-  
-  var wksr=document.createElement("div");wksr.className="wks-row";
-  for(var i=0;i<wgs.length;i++){
-    var wc=document.createElement("div");wc.className="wk-lbl";
-    var w = wgs[i].cnt * 34; 
-    wc.style.width = w + "px";
-    wc.style.minWidth = w + "px";
-    wc.style.maxWidth = w + "px";
-    
-    var strMos = Object.keys(wgs[i].mos).map(function(m){ return MS[parseInt(m)]; }).join(" / ");
-    
-    wc.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;">'
-                +'<div style="font-size:14px;font-weight:800;color:var(--tx1);line-height:1.2;text-transform:uppercase;">'+strMos+'</div>'
-                +'<span style="font-size:10px;font-weight:600;color:var(--tx3);">S.'+p2(wgs[i].wk)+'</span></div>';
-    wksr.appendChild(wc);
-  }
-  wr.appendChild(wksr);hdr.appendChild(wr);
-  
-  var dr=document.createElement("div");dr.className="ghdr-d";
-  var sd=document.createElement("div");sd.className="stub-d";dr.appendChild(sd);
-  var dh=document.createElement("div");dh.className="dhdr";
-  
-  for(var mo=0; mo<12; mo++){
-      var nd=dim(y,mo);
-      for(var d=1;d<=nd;d++){
-        var dc=document.createElement("div");
-        var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1);
-        var cls="dc";
-        if(td)cls+=" td";else if(fe)cls+=" fe";else if(va)cls+=" va";else if(we)cls+=" we";
-        if(mon || d===1)cls+=" ms"; 
-        dc.className=cls;
-        if(fe)dc.title="Jour férié";else if(va)dc.title="Vacances zone B";
-        dc.innerHTML='<div class="dc-n">'+d+'</div><div class="dc-d">'+DS[dow(y,mo,d)]+'</div>';
-        
-        if(d === 1) dc.id = "m-start-" + mo; 
-        
-        dh.appendChild(dc);
-      }
-  }
-  dr.appendChild(dh);hdr.appendChild(dr);grid.appendChild(hdr);
-  
+  var y=ST.year,ps=filtP(),wgs=[],cw=null;
+  for(var mo=0;mo<12;mo++){var nd=dim(y,mo);for(var d=1;d<=nd;d++){var wk=isoWk(y,mo,d);if(!cw||cw.wk!==wk){if(cw)wgs.push(cw);cw={wk:wk,cnt:0,mos:{}};}cw.cnt++;cw.mos[mo]=true;}}if(cw)wgs.push(cw);
+  var grid=document.createElement("div");grid.className="grid"; var hdr=document.createElement("div");hdr.className="ghdr"; var wr=document.createElement("div");wr.className="ghdr-w";
+  wr.innerHTML=`<div class="stub-w"><div style="font-weight:600;font-size:12px">${ps.length} employé(s)</div><div style="font-size:10px;color:var(--tx3);margin-top:2px">Année ${y}</div></div><div class="wks-row">` + wgs.map(w=>`<div class="wk-lbl" style="width:${w.cnt*34}px;min-width:${w.cnt*34}px;max-width:${w.cnt*34}px;"><div style="font-size:14px;font-weight:800;color:var(--tx1);line-height:1.2;text-transform:uppercase;">${Object.keys(w.mos).map(m=>MS[parseInt(m)]).join(" / ")}</div><span style="font-size:10px;font-weight:600;color:var(--tx3);">S.${p2(w.wk)}</span></div>`).join('') + `</div>`;
+  hdr.appendChild(wr); var dr=document.createElement("div");dr.className="ghdr-d"; var dh=document.createElement("div");dh.className="dhdr"; dr.innerHTML='<div class="stub-d"></div>';
+  for(var mo=0;mo<12;mo++){var nd=dim(y,mo);for(var d=1;d<=nd;d++){var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1),cls="dc"+(td?" td":fe?" fe":va?" va":we?" we":"")+(mon||d===1?" ms":""); dh.innerHTML+=`<div class="${cls}" title="${fe?'Jour férié':va?'Vacances zone B':''}" ${d===1?`id="m-start-${mo}"`:''}><div class="dc-n">${d}</div><div class="dc-d">${DS[dow(y,mo,d)]}</div></div>`;}}
+  dr.appendChild(dh); hdr.appendChild(dr); grid.appendChild(hdr);
   for(var pi=0;pi<ps.length;pi++){
-    var p=ps[pi];
-    var row=document.createElement("div");row.className="row";
-    var nc=document.createElement("div");nc.className="nc";
-    
-    nc.innerHTML='<div class="nc-info"><div class="nom" title="'+p.nom+'">'+p.nom+'</div><div class="svc">'+p.service+' <span class="grp">('+p.groupe+')</span></div></div>'
-                +'<button class="btn-bp" data-bpp="'+p.id+'" title="Voir le bilan annuel de '+p.nom+'">📊</button>';
-    row.appendChild(nc);
-    
+    var p=ps[pi], row=document.createElement("div");row.className="row";
+    row.innerHTML=`<div class="nc"><div class="nc-info"><div class="nom" title="${p.nom}">${p.nom}</div><div class="svc">${p.service} <span class="grp">(${p.groupe})</span></div></div><button class="btn-bp" data-bpp="${p.id}" title="Voir le bilan annuel">📊</button></div>`;
     var dr2=document.createElement("div");dr2.className="dr";
-    
-    for(var mo=0; mo<12; mo++){
-        var nd=dim(y,mo);
-        for(var d=1;d<=nd;d++){
-          var ec=document.createElement("div");
-          var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1);
-          var k=eKey(p.id,y,mo,d),ev=ST.events[k];
-          
-          var cls2="ec";
-          if(td)cls2+=" td";else if(fe)cls2+=" fe";else if(va)cls2+=" va";else if(we)cls2+=" we";
-          if(mon || d===1)cls2+=" ms";
-          ec.className=cls2;
-          
-          if(ev) applyCellVisuals(ec, ev);
-          else if(fe) ec.title="Jour férié"; else if(va) ec.title="Vacances zone B";
-          
-          ec.setAttribute("data-pid",p.id);ec.setAttribute("data-day",d);ec.setAttribute("data-month",mo);ec.setAttribute("data-key",k);
-          dr2.appendChild(ec);
-        }
-    }
+    for(var mo=0;mo<12;mo++){var nd=dim(y,mo);for(var d=1;d<=nd;d++){
+        var we=isWe(y,mo,d),fe=isFe(y,mo,d),va=isVa(y,mo,d),td=isTd(y,mo,d),mon=(dow(y,mo,d)===1),k=eKey(p.id,y,mo,d),ev=ST.events[k],cls2="ec"+(td?" td":fe?" fe":va?" va":we?" we":"")+(mon||d===1?" ms":""),ec=document.createElement("div");
+        ec.className=cls2; if(ev)applyCellVisuals(ec,ev);else if(fe)ec.title="Jour férié";else if(va)ec.title="Vacances zone B";
+        ec.setAttribute("data-pid",p.id);ec.setAttribute("data-day",d);ec.setAttribute("data-month",mo);ec.setAttribute("data-key",k); dr2.appendChild(ec);
+    }}
     row.appendChild(dr2);grid.appendChild(row);
   }
   return grid;
 }
 
 function rCalendrier() {
-  var div = document.createElement("div"); div.className = "planning";
-  div.innerHTML = getLegendBarHTML();
-
-  var pt = '<div class="period-toggles" style="margin-left:10px;">'
-          + '<button class="period-btn'+(ST.selectedPeriod==='full'?' active':'')+'" data-period="full" title="Journée entière">Jour</button>'
-          + '<button class="period-btn'+(ST.selectedPeriod==='am'?' active':'')+'" data-period="am" title="Matin (Demi-case Haut/Gauche)">Matin</button>'
-          + '<button class="period-btn'+(ST.selectedPeriod==='pm'?' active':'')+'" data-period="pm" title="Après-midi (Demi-case Bas/Droite)">Aprem</button>'
-          + '</div>';
-
-  var filterBar = document.createElement("div"); filterBar.className = "month-nav";
-  filterBar.innerHTML = '<div class="month-filters" style="width:100%; display:flex; gap:10px; align-items:center;">'
-    + '<span style="font-weight:bold; color:var(--primary);">Sélection :</span>'
-    + '<select id="calSvc"><option value="">Tous les services</option>' + selOpts(ST.services, ST.calSvc) + '</select>'
-    + '<select id="calPid" style="min-width:200px;"><option value="">-- Choisir un employé --</option>' + getCalPidOpts() + '</select>'
-    + pt
-    + '</div>';
-  div.appendChild(filterBar);
-
+  var div = document.createElement("div"); div.className = "planning"; div.innerHTML = getLegendBarHTML();
+  div.innerHTML += '<div class="month-nav"><div class="month-filters" style="width:100%; display:flex; gap:10px; align-items:center;"><span style="font-weight:bold; color:var(--primary);">Sélection :</span><select id="calSvc"><option value="">Tous les services</option>' + selOpts(ST.services, ST.calSvc) + '</select><select id="calPid" style="min-width:200px;"><option value="">-- Choisir un employé --</option>' + getCalPidOpts() + '</select><div class="period-toggles" style="margin-left:10px;"><button class="period-btn'+(ST.selectedPeriod==='full'?' active':'')+'" data-period="full">Jour</button><button class="period-btn'+(ST.selectedPeriod==='am'?' active':'')+'" data-period="am">Matin</button><button class="period-btn'+(ST.selectedPeriod==='pm'?' active':'')+'" data-period="pm">Aprem</button></div></div></div>';
   var gc = document.createElement("div"); gc.className = "cal-wrapper";
-  if (!ST.calPid) {
-     gc.innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; color:var(--tx3); font-size:16px;">Veuillez sélectionner un employé ci-dessus.</div>';
-  } else {
-     var p = ST.personnels.find(function(x){ return String(x.id) === String(ST.calPid); });
-     if(!p) {
-         ST.calPid = "";
-         return rCalendrier(); 
-     }
+  if (!ST.calPid) { gc.innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; color:var(--tx3); font-size:16px;">Veuillez sélectionner un employé ci-dessus.</div>'; } 
+  else {
+     var p = ST.personnels.find(x => String(x.id) === String(ST.calPid));
+     if(!p) { ST.calPid = ""; return rCalendrier(); }
      var calGrid = document.createElement("div"); calGrid.className = "cal-grid";
-
      for(var mo=0; mo<12; mo++){
-        var col = document.createElement("div"); col.className = "cal-col";
-        var mTitle = document.createElement("div"); mTitle.className = "cal-month-name";
-        mTitle.textContent = MO[mo];
-        col.appendChild(mTitle);
-
+        var col = document.createElement("div"); col.className = "cal-col"; col.innerHTML = `<div class="cal-month-name">${MO[mo]}</div>`;
         var nd = dim(ST.year, mo);
         for(var d=1; d<=31; d++){
-           var row = document.createElement("div"); row.className = "cal-row";
            if(d <= nd) {
-               var we=isWe(ST.year,mo,d),fe=isFe(ST.year,mo,d),va=isVa(ST.year,mo,d),td=isTd(ST.year,mo,d);
-               var dw = dow(ST.year,mo,d);
-               var isWeDay = (dw===0||dw===6);
-
-               var lblCls = "cal-lbl";
-               if(isWeDay) lblCls+=" we";
-               if(fe) lblCls+=" fe";
-               if(td) lblCls+=" td";
-
-               row.innerHTML = '<div class="'+lblCls+'"><span>'+d+'</span><span>'+DS[dw]+'</span></div>';
-
-               var ec = document.createElement("div");
-               var k = eKey(p.id, ST.year, mo, d);
-               var ev = ST.events[k];
-
-               ec.className = "ec cal-ec"; 
-               if(td) ec.classList.add("td");
-               else if(fe) ec.classList.add("fe");
-               else if(va) ec.classList.add("va");
-               else if(we) ec.classList.add("we");
-
-               if(ev) applyCellVisuals(ec, ev);
-               else if(fe) ec.title="Jour férié"; else if(va) ec.title="Vacances zone B";
-
-               ec.setAttribute("data-pid", p.id);
-               ec.setAttribute("data-day", d);
-               ec.setAttribute("data-month", mo);
-               ec.setAttribute("data-key", k);
-
-               row.appendChild(ec);
-           } else {
-               row.className = "cal-row empty";
-           }
-           col.appendChild(row);
+               var we=isWe(ST.year,mo,d),fe=isFe(ST.year,mo,d),va=isVa(ST.year,mo,d),td=isTd(ST.year,mo,d),dw=dow(ST.year,mo,d),row=document.createElement("div"); row.className = "cal-row";
+               row.innerHTML = `<div class="cal-lbl${(dw===0||dw===6)?" we":""}${fe?" fe":""}${td?" td":""}"><span>${d}</span><span>${DS[dw]}</span></div>`;
+               var k = eKey(p.id, ST.year, mo, d), ev = ST.events[k], ec = document.createElement("div"); ec.className = "ec cal-ec" + (td?" td":fe?" fe":va?" va":we?" we":"");
+               if(ev) applyCellVisuals(ec, ev); else if(fe) ec.title="Jour férié"; else if(va) ec.title="Vacances zone B";
+               ec.setAttribute("data-pid", p.id); ec.setAttribute("data-day", d); ec.setAttribute("data-month", mo); ec.setAttribute("data-key", k); row.appendChild(ec); col.appendChild(row);
+           } else { col.innerHTML += '<div class="cal-row empty"></div>'; }
         }
         calGrid.appendChild(col);
      }
      gc.appendChild(calGrid);
   }
-  div.appendChild(gc);
-  return div;
+  div.appendChild(gc); return div;
 }
 
 function rTutoModal() {
     var ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'tutoOv';
-    var m = document.createElement('div'); m.className = 'bm'; m.style.maxWidth = '800px';
-    
-    var html = '<div class="bm-hdr"><h2>📖 Tutoriel d\'utilisation</h2><button class="bm-x" id="clTuto">&#10005;</button></div>';
-    html += '<div class="bm-body" style="padding:24px; font-size:14px; line-height:1.6; color:var(--tx1);">';
-    
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-bottom:10px;">1️⃣ Poser une ou plusieurs absences (Saisie Rapide)</h3>';
-    html += '<p>Sélectionnez un motif en haut (ex: <span class="legend-pill" style="background:#3B82F622; color:#3B82F6; padding:4px 10px; font-size:12px; border:1px solid #3B82F6;">CP (2)</span>), puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>.</p>';
-    html += '<ul style="margin-left:20px; margin-top:8px; margin-bottom:8px;">';
-    html += '<li>🖱️ <b>Pour un seul jour :</b> Cliquez simplement sur la case (clic gauche).</li>';
-    html += '<li>🖱️ <b style="color:var(--primary);">Saisie multiple :</b> Cliquez sur une date de début, <b>maintenez le clic enfoncé</b>, glissez la souris jusqu\'à la date de fin, puis relâchez pour remplir plusieurs jours d\'un coup !</li>';
-    html += '</ul>';
-    html += '<p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Le clic gauche ne fonctionne QUE si un motif est sélectionné en haut. Sinon, il ne se passe rien !</p>';
-
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">2️⃣ Les Demi-Journées (Matin / Après-midi)</h3>';
-    html += '<p>Vous pouvez très facilement poser une demi-journée, ou même combiner deux motifs différents sur une même journée ! Pour cela, utilisez les boutons <b>Matin</b> et <b>Aprem</b> de la barre supérieure.</p>';
-    html += '<div style="display:flex; align-items:center; gap:12px; margin-top:8px; background:var(--bg2); padding:12px; border-radius:8px;">';
-    html += '<div style="background:var(--bg1); border:1px solid var(--bd2); border-radius:12px; padding:16px; margin-top:12px; box-shadow:0 8px 20px rgba(0,0,0,0.1); width:100%; max-width:400px; position:relative;">';
-    html += '  <h4 style="margin-bottom:12px; font-size:15px;">DUPONT Jean <span style="font-size:11px; font-weight:normal; color:var(--tx2); float:right;">Jeu 15 Janvier 2026</span></h4>';
-    html += '  <div style="display:flex; gap:12px; margin-bottom:12px;">';
-    html += '    <div style="flex:1; border:1px solid var(--bd1); background:var(--bg2); padding:8px; border-radius:6px;">';
-    html += '      <div style="font-size:12px; font-weight:bold; margin-bottom:6px;">☀️ Matin</div>';
-    html += '      <div style="background:white; border:1px solid var(--bd1); border-radius:4px; padding:4px 8px; font-size:12px; color:var(--tx2); margin-bottom:6px;">2 — CP</div>';
-    html += '      <div style="background:white; border:1px solid var(--bd1); border-radius:4px; padding:4px 8px; font-size:11px; color:var(--tx3); font-style:italic;">RDV Médecin</div>';
-    html += '    </div>';
-    html += '    <div style="flex:1; border:1px solid var(--bd1); background:var(--bg2); padding:8px; border-radius:6px;">';
-    html += '      <div style="font-size:12px; font-weight:bold; margin-bottom:6px;">🌙 Après-midi</div>';
-    html += '      <div style="background:white; border:1px solid var(--bd1); border-radius:4px; padding:4px 8px; font-size:12px; color:var(--tx2);">1 — JRTT</div>';
-    html += '    </div>';
-    html += '  </div>';
-    html += '  <div style="text-align:right;"><span style="background:var(--primary); color:white; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display:inline-block;">Enregistrer</span></div>';
-    html += '  <div style="position:absolute; bottom:-10px; right:30px; font-size:24px; transform:rotate(-15deg); filter:drop-shadow(2px 4px 2px rgba(0,0,0,0.3));">🖱️</div>';
-    html += '</div>';
-
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:24px; margin-bottom:10px;">5️⃣ Vue "Calendrier Personnel"</h3>';
-    html += '<p>L\'onglet <b>Calendrier personnel</b> vous permet de voir l\'année entière d\'un collaborateur d\'un seul coup d\'œil. Pour l\'afficher rapidement : commencez par sélectionner le <b>Service</b> concerné dans le premier menu déroulant, puis choisissez le <b>Nom</b> de la personne dans le second. Vous pourrez y saisir ses absences avec les mêmes outils que sur le planning global !</p>';
-
-    html += '<div style="text-align:right; margin-top:24px;"><button class="btn p" id="btnGotIt">J\'ai compris !</button></div>';
-
-    html += '</div>';
-    m.innerHTML = html;
-    ov.appendChild(m);
+    ov.innerHTML = `<div class="bm" style="max-width:800px;"><div class="bm-hdr"><h2>📖 Tutoriel d'utilisation</h2><button class="bm-x" id="clTuto">&#10005;</button></div><div class="bm-body" style="padding:24px; font-size:14px; line-height:1.6; color:var(--tx1);"><h3 style="color:var(--primary); font-size:17px; margin-bottom:10px;">1️⃣ Poser une ou plusieurs absences (Saisie Rapide)</h3><p>Sélectionnez un motif en haut, puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>.</p><ul style="margin-left:20px; margin-top:8px; margin-bottom:8px;"><li>🖱️ <b>Pour un seul jour :</b> Cliquez simplement sur la case (clic gauche).</li><li>🖱️ <b style="color:var(--primary);">Saisie multiple :</b> Cliquez sur une date de début, <b>maintenez le clic enfoncé</b>, glissez la souris jusqu'à la date de fin, puis relâchez pour remplir plusieurs jours d'un coup !</li></ul><p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Le clic gauche ne fonctionne QUE si un motif est sélectionné en haut.</p><h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">2️⃣ Les Demi-Journées (Matin / Après-midi)</h3><p>Vous pouvez très facilement poser une demi-journée, ou combiner deux motifs ! Utilisez les boutons <b>Matin</b> et <b>Aprem</b> de la barre supérieure.</p><h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">3️⃣ Effacer avec la Gomme</h3><p>Cliquez sur le bouton 🧽 Gomme. Cliquez ensuite (ou glissez) sur les cases à effacer. (La gomme efface toute la case, quoiqu'il arrive !)</p><h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">4️⃣ Clic Droit = Détails & Commentaires</h3><p>Faites un <b>Clic Droit</b> sur n'importe quelle case du planning pour ouvrir la fenêtre de détails.</p><h3 style="color:var(--primary); font-size:17px; margin-top:24px; margin-bottom:10px;">5️⃣ Vue "Calendrier Personnel"</h3><p>L'onglet <b>Calendrier personnel</b> permet de voir l'année d'un collaborateur. Sélectionnez son Service, puis son Nom. Vous pourrez saisir avec les mêmes outils !</p><div style="text-align:right; margin-top:24px;"><button class="btn p" id="btnGotIt">J'ai compris !</button></div></div></div>`;
     return ov;
 }
 
 function rModal(){
-  var m2=ST.modal;
-  var ov=document.createElement('div');ov.className='ov';ov.id='mOv';
-  var m=document.createElement('div');m.className='modal';
+  var m2=ST.modal, ov=document.createElement('div'); ov.className='ov'; ov.id='mOv';
+  var p=ST.personnels.find(x=>String(x.id)===String(m2.pid)), ev=ST.events[m2.key], dw=dow(ST.year,m2.month,m2.day), wk=isoWk(ST.year,m2.month,m2.day);
+  var fe=isFe(ST.year,m2.month,m2.day), va=isVa(ST.year,m2.month,m2.day), we=isWe(ST.year,m2.month,m2.day), amC='', amCm='', pmC='', pmCm='';
+  if(ev){if(ev.type==='full'){amC=ev.causeId; pmC=ev.causeId; amCm=ev.comment; pmCm=ev.comment;}else if(ev.type==='half'){if(ev.am){amC=ev.am.causeId; amCm=ev.am.comment;}if(ev.pm){pmC=ev.pm.causeId; pmCm=ev.pm.comment;}}}
+  if(amCm==="Import Excel")amCm=""; if(pmCm==="Import Excel")pmCm="";
+  var badge=fe?' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>':va?' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances</span>':we?' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>':'';
+  var o='<option value="">&mdash; Présent / Aucune &mdash;</option>'; ST.causes.forEach(c=>o+='<option value="'+c.id+'"'+(amC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>');
+  var o2='<option value="">&mdash; Présent / Aucune &mdash;</option>'; ST.causes.forEach(c=>o2+='<option value="'+c.id+'"'+(pmC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>');
   
-  var p=ST.personnels.find(function(x){return String(x.id)===String(m2.pid);});
-  var ev=ST.events[m2.key];
-  var dw=dow(ST.year,m2.month,m2.day),wk=isoWk(ST.year,m2.month,m2.day);
-  var fe=isFe(ST.year,m2.month,m2.day),va=isVa(ST.year,m2.month,m2.day),we=isWe(ST.year,m2.month,m2.day);
-  
-  var amC='', amCm='', pmC='', pmCm='';
-  if(ev){
-      if(ev.type==='full'){
-          amC=ev.causeId; pmC=ev.causeId;
-          amCm=ev.comment; pmCm=ev.comment;
-      }else if(ev.type==='half'){
-          if(ev.am){amC=ev.am.causeId; amCm=ev.am.comment;}
-          if(ev.pm){pmC=ev.pm.causeId; pmCm=ev.pm.comment;}
-      }
-  }
-  if(amCm==="Import Excel") amCm="";
-  if(pmCm==="Import Excel") pmCm="";
-  
-  var badge='';
-  if(fe)badge=' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>';
-  else if(va)badge=' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances</span>';
-  else if(we)badge=' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>';
-  
-  function makeOpts(selVal){
-    var o='<option value="">&mdash; Présent / Aucune &mdash;</option>';
-    for(var i=0;i<ST.causes.length;i++){
-      o+='<option value="'+ST.causes[i].id+'"'+(selVal===ST.causes[i].id?' selected':'')+'>'+ST.causes[i].id+' — '+ST.causes[i].label+'</option>';
-    }
-    return o;
-  }
-  
-  var parts2=[];
-  parts2.push('<h3>'+(p?p.nom:'')+'</h3>');
-  parts2.push('<div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">'+DL[dw]+' '+m2.day+' '+MO[m2.month]+' '+ST.year+' <span style="margin:0 8px">&mdash;</span> S'+p2(wk)+badge+'</div>');
-  
-  parts2.push('<div class="half-day-split">');
-  parts2.push('<div style="flex:1"><label>☀️ Matin</label><select id="mC_am" style="margin-bottom:8px;">'+makeOpts(amC)+'</select><input id="mCm_am" value="'+amCm+'" placeholder="Commentaire..."/></div>');
-  parts2.push('<div style="flex:1"><label>🌙 Après-midi</label><select id="mC_pm" style="margin-bottom:8px;">'+makeOpts(pmC)+'</select><input id="mCm_pm" value="'+pmCm+'" placeholder="Commentaire..."/></div>');
-  parts2.push('</div>');
-
-  parts2.push('<div class="mbtns">'+(ev?'<button class="btn d" id="dEv">Vider la case</button>':'')+'<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div>');
-  
-  m.innerHTML=parts2.join('');
-  ov.appendChild(m);return ov;
+  ov.innerHTML=`<div class="modal"><h3>${p?p.nom:''}</h3><div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">${DL[dw]} ${m2.day} ${MO[m2.month]} ${ST.year} <span style="margin:0 8px">&mdash;</span> S${p2(wk)}${badge}</div><div class="half-day-split"><div style="flex:1"><label>☀️ Matin</label><select id="mC_am" style="margin-bottom:8px;">${o}</select><input id="mCm_am" value="${amCm}" placeholder="Commentaire..."/></div><div style="flex:1"><label>🌙 Après-midi</label><select id="mC_pm" style="margin-bottom:8px;">${o2}</select><input id="mCm_pm" value="${pmCm}" placeholder="Commentaire..."/></div></div><div class="mbtns">${ev?'<button class="btn d" id="dEv">Vider la case</button>':''}<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div></div>`;
+  return ov;
 }
 
 function rBilan(){
-  var bm=ST.bModal,ov=document.createElement("div");ov.className="ov";ov.id="bmOv";
-  var m=document.createElement("div");m.className="bm";
-  var fs=bm.fs||"",fg=bm.fg||"";
-  var title="",badge="",evs=[],isCg=false;
+  var bm=ST.bModal, ov=document.createElement("div"); ov.className="ov"; ov.id="bmOv";
+  var fs=bm.fs||"", fg=bm.fg||"", title="", badge="", evs=[], isCg=false;
+  if(bm.type==="conge"){ isCg=true; title="Bilan global des congés "+ST.year; evs=evRange(ST.year,0,1,ST.year,11,31,fs,fg); }
+  else if(bm.type==="semaine_courante"){ var cw=currWk(); title="Absents cette semaine"; badge=`Semaine en cours : S${p2(cw.wk)} — ${p2(cw.mon.getDate())} ${MS[cw.mon.getMonth()]} au ${p2(cw.fri.getDate())} ${MS[cw.fri.getMonth()]} ${cw.fri.getFullYear()}`; evs=evRange(cw.mon.getFullYear(),cw.mon.getMonth(),cw.mon.getDate(),cw.fri.getFullYear(),cw.fri.getMonth(),cw.fri.getDate(),fs,fg); }
+  else if(bm.type==="semaine"){ var pw=prevWk(); title="Historique S-1"; badge=`Semaine analysée : S${p2(pw.wk)} — ${p2(pw.mon.getDate())} ${MS[pw.mon.getMonth()]} au ${p2(pw.fri.getDate())} ${MS[pw.fri.getMonth()]} ${pw.fri.getFullYear()}`; evs=evRange(pw.mon.getFullYear(),pw.mon.getMonth(),pw.mon.getDate(),pw.fri.getFullYear(),pw.fri.getMonth(),pw.fri.getDate(),fs,fg); }
+  else if(bm.type==="semaine_prochaine"){ var nw=nextWk(); title="Absents la semaine prochaine"; badge=`Semaine prochaine : S${p2(nw.wk)} — ${p2(nw.mon.getDate())} ${MS[nw.mon.getMonth()]} au ${p2(nw.fri.getDate())} ${MS[nw.fri.getMonth()]} ${nw.fri.getFullYear()}`; evs=evRange(nw.mon.getFullYear(),nw.mon.getMonth(),nw.mon.getDate(),nw.fri.getFullYear(),nw.fri.getMonth(),nw.fri.getDate(),fs,fg); }
+  else if(bm.type==="mois"){ var pm=prevMo(); title="Historique M-1"; badge=`Mois analysé : ${MO[pm.month]} ${pm.year}`; evs=evRange(pm.year,pm.month,1,pm.year,pm.month,dim(pm.year,pm.month),fs,fg); }
+  else if(bm.type==="person"){ var prs=ST.personnels.find(x=>String(x.id)===String(bm.pid)); title="Bilan individuel de l'année — "+prs.nom; badge=`${prs.service} | ${prs.groupe}`; evs=evRange(ST.year,0,1,ST.year,11,31,"","").filter(e=>String(e.person.id)===String(prs.id)); }
   
-  if(bm.type==="conge"){
-    isCg=true;
-    title="Bilan global des congés "+ST.year;
-    evs=evRange(ST.year,0,1,ST.year,11,31,fs,fg);
-  }else if(bm.type==="semaine_courante"){
-    var cw=currWk();
-    title="Absents cette semaine";
-    badge="Semaine en cours : S"+p2(cw.wk)+" — "+p2(cw.mon.getDate())+" "+MS[cw.mon.getMonth()]+" au "+p2(cw.fri.getDate())+" "+MS[cw.fri.getMonth()]+" "+cw.fri.getFullYear();
-    evs=evRange(cw.mon.getFullYear(),cw.mon.getMonth(),cw.mon.getDate(),cw.fri.getFullYear(),cw.fri.getMonth(),cw.fri.getDate(),fs,fg);
-  }else if(bm.type==="semaine"){
-    var pw=prevWk();
-    title="Historique S-1";
-    badge="Semaine analysée : S"+p2(pw.wk)+" — "+p2(pw.mon.getDate())+" "+MS[pw.mon.getMonth()]+" au "+p2(pw.fri.getDate())+" "+MS[pw.fri.getMonth()]+" "+pw.fri.getFullYear();
-    evs=evRange(pw.mon.getFullYear(),pw.mon.getMonth(),pw.mon.getDate(),pw.fri.getFullYear(),pw.fri.getMonth(),pw.fri.getDate(),fs,fg);
-  }else if(bm.type==="semaine_prochaine"){
-    var nw=nextWk();
-    title="Absents la semaine prochaine";
-    badge="Semaine prochaine : S"+p2(nw.wk)+" — "+p2(nw.mon.getDate())+" "+MS[nw.mon.getMonth()]+" au "+p2(nw.fri.getDate())+" "+MS[nw.fri.getMonth()]+" "+nw.fri.getFullYear();
-    evs=evRange(nw.mon.getFullYear(),nw.mon.getMonth(),nw.mon.getDate(),nw.fri.getFullYear(),nw.fri.getMonth(),nw.fri.getDate(),fs,fg);
-  }else if(bm.type==="mois"){
-    var pm=prevMo();
-    title="Historique M-1";
-    badge="Mois analysé : "+MO[pm.month]+" "+pm.year;
-    evs=evRange(pm.year,pm.month,1,pm.year,pm.month,dim(pm.year,pm.month),fs,fg);
-  }else if(bm.type==="person"){
-    var prs=ST.personnels.find(function(x){return String(x.id)===String(bm.pid);});
-    title="Bilan individuel de l'année — " + prs.nom;
-    badge=prs.service + " | " + prs.groupe;
-    evs=evRange(ST.year,0,1,ST.year,11,31,"","");
-    evs=evs.filter(function(e){return String(e.person.id) === String(prs.id);});
-  }
+  var tot=evs.length, uniq=new Set(evs.map(e=>e.person.id)).size, cc={}; evs.forEach(e => cc[e.causeId] = (cc[e.causeId]||0) + (e.period==='full'?1:0.5));
+  var stats=`<div class="bm-sc"><div class="bm-sn">${tot}</div><div class="bm-sl">Lignes (Jours/Demi)</div></div>${bm.type!=='person'?`<div class="bm-sc"><div class="bm-sn">${uniq}</div><div class="bm-sl">Personnes</div></div>`:''}`;
+  ST.causes.forEach(c => { if(cc[c.id]) stats+=`<div class="bm-sc"><div class="bm-sn" style="color:${c.color}">${cc[c.id]}</div><div class="bm-sl">${c.label}</div></div>`; });
   
-  var tot=evs.length,uniq=0,seen={};
-  for(var i=0;i<evs.length;i++){if(!seen[evs[i].person.id]){seen[evs[i].person.id]=1;uniq++;}}
-  
-  var cc={};
-  for(var i=0;i<evs.length;i++){
-      var val = (evs[i].period === 'full') ? 1 : 0.5;
-      cc[evs[i].causeId] = (cc[evs[i].causeId]||0) + val;
-  }
-  
-  var stats='<div class="bm-sc"><div class="bm-sn">'+tot+'</div><div class="bm-sl">Lignes (Jours/Demi)</div></div>'
-    +(bm.type!=='person' ? '<div class="bm-sc"><div class="bm-sn">'+uniq+'</div><div class="bm-sl">Personnes</div></div>' : '');
-  for(var i=0;i<ST.causes.length;i++){
-    var n=cc[ST.causes[i].id]||0;
-    if(n)stats+='<div class="bm-sc"><div class="bm-sn" style="color:'+ST.causes[i].color+'">'+n+'</div><div class="bm-sl">'+ST.causes[i].label+'</div></div>';
-  }
-  
-  var body="";
-  var csvData = ""; 
+  var body="", csvData="", hds='<th>Employé</th><th>Service</th>'; ST.causes.forEach(c=>hds+=`<th style="color:${c.color}">${c.label}</th>`); hds+=`<th>Total ${ST.year}</th>`;
   
   if(isCg){
-    var byP={};
-    var psFiltered = filtP(); 
-    for(var i=0;i<psFiltered.length;i++){
-      var p=psFiltered[i];
-      byP[p.id]={person:p,counts:{}};
-      for(var j=0;j<ST.causes.length;j++)byP[p.id].counts[ST.causes[j].id]=0;
-    }
-    for(var i=0;i<evs.length;i++){
-        var e=evs[i];
-        if(byP[e.person.id]){
-            var val = (e.period === 'full') ? 1 : 0.5;
-            byP[e.person.id].counts[e.causeId] = (byP[e.person.id].counts[e.causeId]||0) + val;
-        }
-    }
-    var pers=Object.values(byP);
+    var byP={}, psFiltered=filtP(); psFiltered.forEach(p=>{ byP[p.id]={person:p,counts:{}}; ST.causes.forEach(c=>byP[p.id].counts[c.id]=0); });
+    evs.forEach(e=>{ if(byP[e.person.id]) byP[e.person.id].counts[e.causeId] += (e.period==='full'?1:0.5); });
+    var pers=Object.values(byP), totC={}, grand=0; ST.causes.forEach(c=>totC[c.id]=0);
+    pers.forEach(pg=>{ ST.causes.forEach(c=>totC[c.id]+=pg.counts[c.id]); }); ST.causes.forEach(c=>grand+=totC[c.id]);
     
-    var totC={},grand=0;
-    for(var i=0;i<ST.causes.length;i++)totC[ST.causes[i].id]=0;
-    for(var i=0;i<pers.length;i++)for(var j=0;j<ST.causes.length;j++)totC[ST.causes[j].id]+=(pers[i].counts[ST.causes[j].id]||0);
-    for(var i=0;i<ST.causes.length;i++)grand+=totC[ST.causes[i].id];
+    csvData += ["Employé", "Service", "Groupe", ...ST.causes.map(c=>c.label), `Total ${ST.year}`].join(";") + "\n";
+    var rows = pers.map(pg => {
+        var pt=0; ST.causes.forEach(c=>pt+=pg.counts[c.id]);
+        csvData += [pg.person.nom, pg.person.service, pg.person.groupe, ...ST.causes.map(c=>pg.counts[c.id]||0), pt].join(";") + "\n";
+        return `<tr><td class="bc-e">${pg.person.nom}</td><td><span class="bc-s">${pg.person.service}</span> <span class="bc-g">(${pg.person.groupe})</span></td>` + ST.causes.map(c=>pg.counts[c.id]>0?`<td class="bc-c" style="color:${c.color}">${pg.counts[c.id]}</td>`:'<td class="bc-d">—</td>').join('') + `<td class="bc-t">${pt>0?pt:"—"}</td></tr>`;
+    }).join('');
     
-    var csvHeads = ["Employé", "Service", "Groupe"];
-    var hds='<th>Employé</th><th>Service</th>';
-    for(var i=0;i<ST.causes.length;i++){
-      hds+='<th style="color:'+ST.causes[i].color+'">'+ST.causes[i].label+'</th>';
-      csvHeads.push(ST.causes[i].label);
-    }
-    hds+='<th>Total '+ST.year+'</th>';
-    csvHeads.push("Total " + ST.year);
-    csvData += csvHeads.join(";") + "\n";
-    
-    var rows="";
-    for(var i=0;i<pers.length;i++){
-      var pg=pers[i],pt=0;
-      var csvRow = [pg.person.nom, pg.person.service, pg.person.groupe];
-      for(var j=0;j<ST.causes.length;j++)pt+=(pg.counts[ST.causes[j].id]||0);
-      
-      rows+='<tr><td class="bc-e">'+pg.person.nom+'</td><td><span class="bc-s">'+pg.person.service+'</span> <span class="bc-g">('+pg.person.groupe+')</span></td>';
-      for(var j=0;j<ST.causes.length;j++){
-        var n=pg.counts[ST.causes[j].id]||0;
-        rows+=n>0?'<td class="bc-c" style="color:'+ST.causes[j].color+'">'+n+'</td>':'<td class="bc-d">—</td>';
-        csvRow.push(n);
-      }
-      rows+='<td class="bc-t">'+(pt>0?pt:"—")+'</td></tr>';
-      csvRow.push(pt);
-      csvData += csvRow.join(";") + "\n";
-    }
-    
-    var totRow='<tr class="bc-tr"><td colspan="2">Total</td>';
-    var csvTotRow = ["TOTAL", "", ""];
-    for(var i=0;i<ST.causes.length;i++){
-      totRow+='<td style="color:'+ST.causes[i].color+'">'+( totC[ST.causes[i].id]||"—")+'</td>';
-      csvTotRow.push(totC[ST.causes[i].id] || 0);
-    }
-    totRow+='<td>'+grand+'</td></tr>';
-    csvTotRow.push(grand);
-    csvData += csvTotRow.join(";") + "\n";
-    
-    body='<div class="bc-wrap"><table class="bc-tbl"><thead><tr>'+hds+'</tr></thead><tbody>'+rows+totRow+'</tbody></table></div>';
-    
+    csvData += ["TOTAL", "", "", ...ST.causes.map(c=>totC[c.id]||0), grand].join(";") + "\n";
+    var totRow = `<tr class="bc-tr"><td colspan="2">Total</td>` + ST.causes.map(c=>`<td style="color:${c.color}">${totC[c.id]||"—"}</td>`).join('') + `<td>${grand}</td></tr>`;
+    body = `<div class="bc-wrap"><table class="bc-tbl"><thead><tr>${hds}</tr></thead><tbody>${rows}${totRow}</tbody></table></div>`;
   }else{
-    var byP2={};
-    var searchLower = ST.fSearch.toLowerCase();
-    for(var i=0;i<evs.length;i++){
-      var e=evs[i];
-      if(ST.fSearch && e.person.nom.toLowerCase().indexOf(searchLower) === -1) continue;
-      if(!byP2[e.person.id])byP2[e.person.id]={person:e.person,entries:[]};
-      byP2[e.person.id].entries.push(e);
-    }
-    var pids=Object.keys(byP2);
-    pids.sort(function(a,b){return byP2[a].person.nom.localeCompare(byP2[b].person.nom);});
-    
-    for(var i=0;i<pids.length;i++)byP2[pids[i]].entries.sort(function(a,b){return a.date-b.date;});
-    
+    var byP2={}, searchLower = ST.fSearch.toLowerCase();
+    evs.forEach(e=>{ if(ST.fSearch && e.person.nom.toLowerCase().indexOf(searchLower)===-1) return; if(!byP2[e.person.id]) byP2[e.person.id]={person:e.person,entries:[]}; byP2[e.person.id].entries.push(e); });
+    var pids=Object.keys(byP2).sort((a,b)=>byP2[a].person.nom.localeCompare(byP2[b].person.nom)); pids.forEach(id=>byP2[id].entries.sort((a,b)=>a.date-b.date));
     csvData += "Date;Employé;Service;Groupe;Type;Période;Commentaire\n";
-    
-    if(pids.length===0){
-      body='<div class="bm-empty">Aucune absence enregistrée sur cette période.</div>';
-    }else{
-      var tbody="";
-      for(var i=0;i<pids.length;i++){
-        var g=byP2[pids[i]];
-        if(bm.type !== 'person') tbody+='<tr class="bh-pr"><td colspan="3">'+g.person.nom+'<span class="bh-pb">'+g.person.service+' - '+g.person.groupe+'</span></td></tr>';
-        
-        for(var j=0;j<g.entries.length;j++){
-          var e=g.entries[j];
-          var displayCmt = (e.comment === "Import Excel") ? "" : e.comment;
-          var periodStr = e.period === 'am' ? ' (Matin)' : e.period === 'pm' ? ' (Aprem)' : '';
-          
-          tbody+='<tr class="bh-er"><td><span class="bh-dot"></span>'+DL[dow(e.year,e.month,e.day)]+' '+p2(e.day)+" "+MS[e.month]+'</td>'
-            +'<td><span class="bh-cb" style="background:'+cColor(e.causeId)+'">'+cLabel(e.causeId)+periodStr+'</span></td>'
-            +'<td class="bh-cm">'+(displayCmt||"—")+'</td></tr>';
-            
-          csvData += [
-            p2(e.day)+"/"+p2(e.month+1)+"/"+e.year,
-            g.person.nom,
-            g.person.service,
-            g.person.groupe,
-            cLabel(e.causeId),
-            e.period === 'am' ? 'Matin' : e.period === 'pm' ? 'Après-midi' : 'Jour entier',
-            (displayCmt||"")
-          ].join(";") + "\n";
-        }
-      }
-      body='<div class="bh-wrap"><table class="bh-tbl"><thead><tr><th style="width:180px">Date</th><th style="width:200px">Type</th><th>Commentaire</th></tr></thead><tbody>'+tbody+'</tbody></table></div>';
+    if(pids.length===0) { body='<div class="bm-empty">Aucune absence enregistrée sur cette période.</div>'; }
+    else {
+      var tbody = pids.map(id => {
+          var g=byP2[id], htm=bm.type!=='person'?`<tr class="bh-pr"><td colspan="3">${g.person.nom}<span class="bh-pb">${g.person.service} - ${g.person.groupe}</span></td></tr>`:'';
+          return htm + g.entries.map(e => {
+              var dCmt = e.comment==="Import Excel"?"":e.comment, pStr = e.period==='am'?' (Matin)':e.period==='pm'?' (Aprem)':'';
+              csvData += [p2(e.day)+"/"+p2(e.month+1)+"/"+e.year, g.person.nom, g.person.service, g.person.groupe, cLabel(e.causeId), e.period==='am'?'Matin':e.period==='pm'?'Après-midi':'Jour entier', dCmt].join(";") + "\n";
+              return `<tr class="bh-er"><td><span class="bh-dot"></span>${DL[dow(e.year,e.month,e.day)]} ${p2(e.day)} ${MS[e.month]}</td><td><span class="bh-cb" style="background:${cColor(e.causeId)}">${cLabel(e.causeId)}${pStr}</span></td><td class="bh-cm">${dCmt||"—"}</td></tr>`;
+          }).join('');
+      }).join('');
+      body = `<div class="bh-wrap"><table class="bh-tbl"><thead><tr><th style="width:180px">Date</th><th style="width:200px">Type</th><th>Commentaire</th></tr></thead><tbody>${tbody}</tbody></table></div>`;
     }
   }
   
-  var selSvc='<select id="bmFs"><option value="">Tous les services</option>'+selOpts(ST.services,fs)+'</select>';
-  var selGrp='<select id="bmFg"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,fg)+'</select>';
-  
-  var filtresHdr = '<div class="bm-hf">'+selSvc+selGrp+'<button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>';
-
-  m.innerHTML='<div class="bm-hdr"><div class="bm-hl"><span style="font-size:24px; color:var(--primary)">'+(bm.type==='person'?'👤':'&#128337;')+'</span><h2>'+title+'</h2>'
-    +filtresHdr+'</div>'
-    +'<button class="bm-x" id="clBm">&#10005;</button></div>'
-    +'<div class="bm-body">'+(badge?'<div class="bm-bdg">'+badge+'</div>':"")
-    +'<div class="bm-stats">'+stats+'</div>'+body+'</div>';
-    
-  ST._currentCsv = csvData;
-  ST._currentCsvName = title.replace(/\s+/g, "_") + ".csv";
-  
-  ov.appendChild(m);return ov;
+  var filtresHdr = bm.type!=='person' ? `<div class="bm-hf"><select id="bmFs"><option value="">Tous les services</option>${selOpts(ST.services,fs)}</select><select id="bmFg"><option value="">Tous les groupes</option>${selOpts(ST.groupes,fg)}</select><button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>` : `<div class="bm-hf"><button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>`;
+  ST._currentCsv = csvData; ST._currentCsvName = title.replace(/\s+/g, "_") + ".csv";
+  ov.innerHTML = `<div class="bm"><div class="bm-hdr"><div class="bm-hl"><span style="font-size:24px; color:var(--primary)">${bm.type==='person'?'👤':'&#128337;'}</span><h2>${title}</h2>${filtresHdr}</div><button class="bm-x" id="clBm">&#10005;</button></div><div class="bm-body">${badge?`<div class="bm-bdg">${badge}</div>`:""}<div class="bm-stats">${stats}</div>${body}</div></div>`;
+  return ov;
 }
 
 function rEModal(){
-  var em=ST.eModal,p=null;
-  if(em.pid)for(var i=0;i<ST.personnels.length;i++){if(String(ST.personnels[i].id)===String(em.pid)){p=ST.personnels[i];break;}}
-  if(!p)p={};
-  var isNew=!em.pid,ov=document.createElement("div");ov.className="ov";
-  var m=document.createElement("div");m.className="modal";
+  var em=ST.eModal, p=ST.personnels.find(x=>String(x.id)===String(em.pid))||{}, isNew=!em.pid, ov=document.createElement("div"); ov.className="ov";
   
-  var svcOpts = '';
-  for(var i=0;i<ST.services.length;i++){ svcOpts += '<option value="'+ST.services[i]+'">'; }
-  var grpOpts = '';
-  for(var i=0;i<ST.groupes.length;i++){ grpOpts += '<option value="'+ST.groupes[i]+'">'; }
+  var pwdHtml = "";
+  if(!isNew) {
+    if(p.pwd) pwdHtml = `<div class="mr" style="display:flex; align-items:center; gap:10px; margin-top:16px; padding-top:16px; border-top:1px solid var(--bd1);"><input type="checkbox" id="eResetPwd" style="width:auto; transform:scale(1.2);"><label style="margin:0; cursor:pointer; color:#E24B4A; font-weight:700;" for="eResetPwd">⚠️ Réinitialiser le mot de passe</label></div>`;
+    else pwdHtml = `<div class="mr" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--bd1);"><span style="font-size:12px; color:var(--tx3); font-style:italic;">Aucun mot de passe défini pour le moment.</span></div>`;
+  }
 
-  var isInactive = p.inactive ? 'checked' : '';
-  
-  m.innerHTML='<h3>'+(isNew?"Ajouter un employé":"Modifier l'employé")+'</h3>'
-    +'<div class="mr"><label>Nom complet</label><input id="eNom" value="'+(p.nom||"")+'" placeholder="Ex: DUPONT Jean"></div>'
-    +'<div class="mr"><label>Service</label><input id="eSvc" list="listSvc" value="'+(p.service||"")+'" placeholder="Sélectionner ou taper un nouveau..."><datalist id="listSvc">'+svcOpts+'</datalist></div>'
-    +'<div class="mr"><label>Groupe</label><input id="eGrp" list="listGrp" value="'+(p.groupe||"")+'" placeholder="Sélectionner ou taper un nouveau..."><datalist id="listGrp">'+grpOpts+'</datalist></div>'
-    +'<div class="mr" style="display:flex; align-items:center; gap:10px;"><input type="checkbox" id="eInactive" style="width:auto; transform:scale(1.2);" '+isInactive+'><label style="margin:0; cursor:pointer;" for="eInactive">Employé inactif (masqué du planning)</label></div>'
-    +'<div class="mbtns">'+(isNew?"":'<button class="btn d" id="dPer">Supprimer</button>')
-    +'<button class="btn" id="cEd">Annuler</button><button class="btn p" id="sEd">Enregistrer</button></div>';
-  ov.appendChild(m);return ov;
+  ov.innerHTML=`<div class="modal"><h3>${isNew?"Ajouter un employé":"Modifier l'employé"}</h3><div class="mr"><label>Nom complet</label><input id="eNom" value="${p.nom||""}" placeholder="Ex: DUPONT Jean"></div><div class="mr"><label>Service</label><input id="eSvc" list="listSvc" value="${p.service||""}"><datalist id="listSvc">${ST.services.map(s=>`<option value="${s}">`).join('')}</datalist></div><div class="mr"><label>Groupe</label><input id="eGrp" list="listGrp" value="${p.groupe||""}"><datalist id="listGrp">${ST.groupes.map(g=>`<option value="${g}">`).join('')}</datalist></div><div class="mr" style="display:flex; align-items:center; gap:10px;"><input type="checkbox" id="eInactive" style="width:auto; transform:scale(1.2);" ${p.inactive?'checked':''}><label style="margin:0; cursor:pointer;" for="eInactive">Employé inactif (masqué du planning)</label></div>${pwdHtml}<div class="mbtns">${isNew?"":'<button class="btn d" id="dPer">Supprimer</button>'}<button class="btn" id="cEd">Annuler</button><button class="btn p" id="sEd">Enregistrer</button></div></div>`;
+  return ov;
 }
 
 function rPModal(){
-  var c=ST.pModal,isNew=!c.id;
-  var ov=document.createElement('div');ov.className='ov';
-  var m=document.createElement('div');m.className='modal';
-  var parts=[];
-  parts.push('<h3>'+(isNew?'Ajouter une cause':'Modifier la cause')+'</h3>');
-  parts.push('<div class="mr"><label>Libellé complet</label><input id="pLbl" value="'+(c.label||'')+'" placeholder="Ex: Télétravail"></div>');
-  parts.push('<div class="mr"><label>Code court (Numéro/Initiales)</label><input id="pSh" value="'+(c.short||'')+'" style="width:100px" placeholder="Ex: TT"></div>');
-  parts.push('<div class="mr"><label>Couleur</label><input id="pCol" type="color" value="'+(c.color||'#1D9E75')+'" style="height:40px;padding:2px;cursor:pointer"></div>');
-  parts.push('<div class="mbtns">'+(isNew?'':'<button class="btn d" id="dPar">Supprimer</button>')+'<button class="btn" id="cPar">Annuler</button><button class="btn p" id="sPar">Enregistrer</button></div>');
-  m.innerHTML=parts.join('');
-  ov.appendChild(m);return ov;
+  var c=ST.pModal, isNew=!c.id, ov=document.createElement('div'); ov.className='ov';
+  ov.innerHTML=`<div class="modal"><h3>${isNew?'Ajouter une cause':'Modifier la cause'}</h3><div class="mr"><label>Libellé complet</label><input id="pLbl" value="${c.label||''}" placeholder="Ex: Télétravail"></div><div class="mr"><label>Code court</label><input id="pSh" value="${c.short||''}" style="width:100px"></div><div class="mr"><label>Couleur</label><input id="pCol" type="color" value="${c.color||'#1D9E75'}" style="height:40px;padding:2px;cursor:pointer"></div><div class="mbtns">${isNew?'':'<button class="btn d" id="dPar">Supprimer</button>'}<button class="btn" id="cPar">Annuler</button><button class="btn p" id="sPar">Enregistrer</button></div></div>`;
+  return ov;
 }
 
 function rSvcModal() {
   var ov=document.createElement("div");ov.className="ov";ov.id="svcOv";
-  var m=document.createElement("div");m.className="modal";
-  m.innerHTML='<h3>Modifier le service</h3>'
-    +'<div class="mr"><label>Nom du service</label><input id="editSvcVal" value="'+ST.svcModal.oldVal+'"></div>'
-    +'<div class="mbtns"><button class="btn" id="cSvc">Annuler</button><button class="btn p" id="sSvc">Enregistrer</button></div>';
-  ov.appendChild(m);return ov;
+  ov.innerHTML=`<div class="modal"><h3>Modifier le service</h3><div class="mr"><label>Nom du service</label><input id="editSvcVal" value="${ST.svcModal.oldVal}"></div><div class="mbtns"><button class="btn" id="cSvc">Annuler</button><button class="btn p" id="sSvc">Enregistrer</button></div></div>`;
+  return ov;
 }
 
 function rGrpModal() {
   var ov=document.createElement("div");ov.className="ov";ov.id="grpOv";
-  var m=document.createElement("div");m.className="modal";
-  m.innerHTML='<h3>Modifier le groupe</h3>'
-    +'<div class="mr"><label>Nom du groupe</label><input id="editGrpVal" value="'+ST.grpModal.oldVal+'"></div>'
-    +'<div class="mbtns"><button class="btn" id="cGrp">Annuler</button><button class="btn p" id="sGrp">Enregistrer</button></div>';
-  ov.appendChild(m);return ov;
+  ov.innerHTML=`<div class="modal"><h3>Modifier le groupe</h3><div class="mr"><label>Nom du groupe</label><input id="editGrpVal" value="${ST.grpModal.oldVal}"></div><div class="mbtns"><button class="btn" id="cGrp">Annuler</button><button class="btn p" id="sGrp">Enregistrer</button></div></div>`;
+  return ov;
 }
 
 function rPersonnel(){
-  var div=document.createElement('div');div.className='tc';
-  var ps = filtP(true); 
-  
-  var sh=document.createElement('div');sh.className='sh';
-  sh.innerHTML='<h2>Employés ('+ps.length+')</h2>'
-    +'<div class="month-filters" style="margin-left:auto; margin-right:16px;">'
-    +'<select id="fSvc"><option value="">Tous les services</option>'+selOpts(ST.services,ST.fSvc)+'</select>'
-    +'<select id="fGrp"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,ST.fGrp)+'</select>'
-    +'</div>'
-    +'<button class="btn p" id="addP">+ Ajouter</button>';
-  div.appendChild(sh);
-  
-  var tbl=document.createElement('table');tbl.className='tbl';
-  var thead=document.createElement('thead');
-  var hrow=document.createElement('tr');
-  ['Nom','Service','Groupe','Statut','Actions'].forEach(function(t){var th=document.createElement('th');th.textContent=t;hrow.appendChild(th);});
-  thead.appendChild(hrow);tbl.appendChild(thead);
-  
-  var tb=document.createElement('tbody');
-  for(var i=0;i<ps.length;i++){
-    var p=ps[i];
-    var tr=document.createElement('tr');
-    
-    var td1=document.createElement('td');td1.style.fontWeight='600';td1.textContent=p.nom;tr.appendChild(td1);
-    var td2=document.createElement('td');td2.textContent=p.service;tr.appendChild(td2);
-    
-    var td3=document.createElement('td');
-    var span=document.createElement('span');span.style.color='var(--primary)';span.style.fontWeight='600';span.textContent=p.groupe;
-    td3.appendChild(span);tr.appendChild(td3);
-    
-    var td4=document.createElement('td');
-    if(p.inactive) {
-       td4.innerHTML = '<span style="background:#fce7f3; color:#db2777; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Inactif</span>';
-    } else {
-       td4.innerHTML = '<span style="background:#dcfce7; color:#166534; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Actif</span>';
-    }
-    tr.appendChild(td4);
-
-    var td5=document.createElement('td');
-    var eb=document.createElement('button');eb.className='eb edit-pers';eb.setAttribute('data-ep',p.id);eb.textContent='Modifier';
-    td5.appendChild(eb);tr.appendChild(td5);
-    tb.appendChild(tr);
-  }
-  tbl.appendChild(tb);div.appendChild(tbl);return div;
+  var div=document.createElement('div');div.className='tc'; var ps=filtP(true);
+  var html=`<div class="sh"><h2>Employés (${ps.length})</h2><div class="month-filters" style="margin-left:auto; margin-right:16px;"><select id="fSvc"><option value="">Tous les services</option>${selOpts(ST.services,ST.fSvc)}</select><select id="fGrp"><option value="">Tous les groupes</option>${selOpts(ST.groupes,ST.fGrp)}</select></div><button class="btn p" id="addP">+ Ajouter</button></div><table class="tbl"><thead><tr><th>Nom</th><th>Service</th><th>Groupe</th><th>Statut</th><th>Actions</th></tr></thead><tbody>`;
+  ps.forEach(p => { html+=`<tr><td style="font-weight:600;">${p.nom}</td><td>${p.service}</td><td><span style="color:var(--primary);font-weight:600;">${p.groupe}</span></td><td>${p.inactive?'<span style="background:#fce7f3; color:#db2777; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Inactif</span>':'<span style="background:#dcfce7; color:#166534; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Actif</span>'}</td><td><button class="eb edit-pers" data-ep="${p.id}">Modifier</button></td></tr>`; });
+  html+='</tbody></table>'; div.innerHTML=html; return div;
 }
 
 function rParametres(){
-  var div=document.createElement("div");div.className="tc";
-  var sh=document.createElement("div");sh.className="sh";
-  sh.innerHTML='<h2>Paramétrages</h2>';
-  div.appendChild(sh);
-  
-  var pg=document.createElement("div");pg.className="pg";
-  
-  // -- CAUSES --
-  var c1=document.createElement("div");c1.className="pc";
-  c1.innerHTML='<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--bd1); padding-bottom:12px;"><h3 style="margin:0; border:none; padding:0;">Causes configurées</h3><button class="btn p" id="addC" style="padding:4px 10px; font-size:12px;">+ Ajouter</button></div>';
-  var tblC = document.createElement("div"); tblC.style.display="flex"; tblC.style.flexDirection="column"; tblC.style.gap="8px";
-  for(var i=0;i<ST.causes.length;i++){
-    var c=ST.causes[i];
-    tblC.innerHTML += '<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">'
-        + '<div style="display:flex; align-items:center; gap:10px;"><div class="cdot" style="background:'+c.color+'"></div><span style="font-weight:600;">'+c.label+' <span style="color:var(--tx3); font-size:11px;">('+c.short+')</span></span></div>'
-        + '<div><button class="eb edit-cause" data-ec="'+c.id+'" style="padding:4px 8px; font-size:11px;">Modifier</button></div>'
-        + '</div>';
-  }
-  c1.appendChild(tblC);
-  pg.appendChild(c1);
-  
-  // -- SERVICES --
-  var c2=document.createElement("div");c2.className="pc";c2.innerHTML="<h3>Services disponibles</h3>";
-  var svcList = document.createElement("div");
-  svcList.style.display = "flex"; svcList.style.flexDirection = "column"; svcList.style.gap = "8px";
-  for(var i=0;i<ST.services.length;i++){
-    svcList.innerHTML+='<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">'
-        + '<span style="font-weight:600; font-size:13px;">'+ST.services[i]+'</span>'
-        + '<div style="display:flex; gap:6px;"><button class="eb edit-svc" data-editsvc="'+ST.services[i]+'" style="padding:4px 8px; font-size:11px;">Modifier</button>'
-        + '<button class="eb del-svc" data-svc="'+ST.services[i]+'" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div>'
-        + '</div>';
-  }
-  c2.appendChild(svcList);
-  c2.innerHTML+='<div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newSvc" placeholder="Nouveau service..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addSvcBtn" style="padding:6px 12px;">Ajouter</button></div>';
-  pg.appendChild(c2);
-  
-  // -- GROUPES --
-  var cGrp=document.createElement("div");cGrp.className="pc";cGrp.innerHTML="<h3>Groupes disponibles</h3>";
-  var grpList = document.createElement("div");
-  grpList.style.display = "flex"; grpList.style.flexDirection = "column"; grpList.style.gap = "8px";
-  for(var i=0;i<ST.groupes.length;i++){
-    grpList.innerHTML+='<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">'
-        + '<span style="font-weight:600; font-size:13px;">'+ST.groupes[i]+'</span>'
-        + '<div style="display:flex; gap:6px;"><button class="eb edit-grp" data-editgrp="'+ST.groupes[i]+'" style="padding:4px 8px; font-size:11px;">Modifier</button>'
-        + '<button class="eb del-grp" data-grp="'+ST.groupes[i]+'" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div>'
-        + '</div>';
-  }
-  cGrp.appendChild(grpList);
-  cGrp.innerHTML+='<div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newGrp" placeholder="Nouveau groupe..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addGrpBtn" style="padding:6px 12px;">Ajouter</button></div>';
-  pg.appendChild(cGrp);
-
-  // -- EXPORT EXCEL --
-  var cExp=document.createElement("div");cExp.className="pc";
-  cExp.innerHTML=`<h3>📤 Exporter l'intégralité (.xlsx)</h3>
-  <p style="font-size:13px;color:var(--tx2);margin-bottom:16px;line-height:1.5;">Générer un véritable fichier Excel contenant toutes les saisies et commentaires actuels de ${ST.year}.</p>
-  <button class="btn p" id="btnExportGlobalXlsx" style="width:100%;">Télécharger le Planning</button>`;
-  pg.appendChild(cExp);
-  
-  // -- IMPORT EXCEL --
-  var c3=document.createElement("div");c3.className="pc";c3.style.gridColumn="1 / -1";
-  c3.innerHTML=`<h3>📥 Importer un fichier Excel (.xlsx)</h3>
-  <p style="font-size:12px;color:var(--tx2);margin-bottom:12px;line-height:1.5;">Attention : L'importation effacera <b>toutes les absences actuellement affichées</b> pour les remplacer par celles du fichier. Les commentaires seront récupérés et leurs accents réparés si besoin.</p>
-  <div style="display:flex;gap:10px;align-items:center">
-    <input type="file" id="excelImportFile" accept=".xlsx, .xls" style="flex:1;padding:8px;border:1px dashed var(--bd2);border-radius:var(--r1);background:var(--bg2)">
-    <button class="btn p" id="btnImportExcel" style="background:#F97316; border-color:#F97316;">Lancer l'import</button>
-  </div>
-  <div id="importLog" style="margin-top:12px;font-size:13px;font-weight:600;color:var(--tx2)"></div>`;
-  pg.appendChild(c3);
-
-  div.appendChild(pg);return div;
+  var div=document.createElement("div");div.className="tc"; div.innerHTML=`<div class="sh"><h2>Paramétrages</h2></div><div class="pg"><div class="pc" style="grid-column:1 / -1;"><h3>📤 Exporter l'intégralité du planning (Excel .xlsx)</h3><p style="font-size:13px;color:var(--tx2);margin-bottom:16px;">Générer un fichier Excel (.xlsx) contenant toutes les saisies actuelles.</p><button class="btn p" id="btnExportGlobalXlsx">Télécharger le Planning complet</button></div><div class="pc"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--bd1); padding-bottom:12px;"><h3 style="margin:0; border:none; padding:0;">Causes</h3><button class="btn p" id="addC" style="padding:4px 10px; font-size:12px;">+ Ajouter</button></div><div style="display:flex;flex-direction:column;gap:8px;">${ST.causes.map(c=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><div style="display:flex; align-items:center; gap:10px;"><div class="cdot" style="background:${c.color}"></div><span style="font-weight:600;">${c.label} <span style="color:var(--tx3); font-size:11px;">(${c.short})</span></span></div><div><button class="eb edit-cause" data-ec="${c.id}" style="padding:4px 8px; font-size:11px;">Modifier</button></div></div>`).join('')}</div></div><div class="pc"><h3>Services disponibles</h3><div style="display:flex;flex-direction:column;gap:8px;">${ST.services.map(s=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-weight:600; font-size:13px;">${s}</span><div style="display:flex; gap:6px;"><button class="eb edit-svc" data-editsvc="${s}" style="padding:4px 8px; font-size:11px;">Modifier</button><button class="eb del-svc" data-svc="${s}" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div></div>`).join('')}</div><div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newSvc" placeholder="Nouveau service..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addSvcBtn" style="padding:6px 12px;">Ajouter</button></div></div><div class="pc"><h3>Groupes disponibles</h3><div style="display:flex;flex-direction:column;gap:8px;">${ST.groupes.map(g=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-weight:600; font-size:13px;">${g}</span><div style="display:flex; gap:6px;"><button class="eb edit-grp" data-editgrp="${g}" style="padding:4px 8px; font-size:11px;">Modifier</button><button class="eb del-grp" data-grp="${g}" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div></div>`).join('')}</div><div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newGrp" placeholder="Nouveau groupe..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addGrpBtn" style="padding:6px 12px;">Ajouter</button></div></div><div class="pc" style="grid-column:1 / -1;"><h3>📥 Importer un fichier Excel (.xlsx)</h3><div style="display:flex;gap:10px;align-items:center"><input type="file" id="excelImportFile" accept=".xlsx, .xls" style="flex:1;padding:8px;border:1px dashed var(--bd2);border-radius:var(--r1);background:var(--bg2)"><button class="btn p" id="btnImportExcel" style="background:#F97316; border-color:#F97316;">Lancer l'import</button></div><div id="importLog" style="margin-top:12px;font-size:13px;font-weight:600;color:var(--tx2)"></div></div></div>`;
+  return div;
 }
 
-
-// === GESTION DES EVENEMENTS GLOBAUX DU DOCUMENT ===
+// === EVENEMENTS GLOBAUX & BINDING ===
 document.addEventListener("click", function(e) {
-    // --- PERSONNEL ---
-    if (e.target.closest('#addP')) { ST.eModal = {}; renderModals(); return; }
-    
-    var btnEp = e.target.closest('.edit-pers');
-    if (btnEp) { ST.eModal = { pid: String(btnEp.getAttribute("data-ep")) }; renderModals(); return; }
-
-    // --- PARAMETRES : CAUSES ---
-    if (e.target.closest('#addC')) { ST.pModal = {}; renderModals(); return; }
-    
-    var btnEc = e.target.closest('.edit-cause');
-    if (btnEc) {
-        var id = parseInt(btnEc.getAttribute("data-ec"));
-        for(var j=0; j<ST.causes.length; j++){
-            if(ST.causes[j].id === id){ ST.pModal = Object.assign({}, ST.causes[j]); renderModals(); break; }
-        }
-        return;
-    }
-
-    // --- PARAMETRES : SERVICES ---
-    if (e.target.closest('#addSvcBtn')) {
-        var valSvc = document.getElementById("newSvc").value.trim();
-        if(valSvc && ST.services.indexOf(valSvc) === -1){ ST.services.push(valSvc); ST.services.sort(); saveConfig(); renderApp(); }
-        return;
-    }
-    var btnEditSvc = e.target.closest('.edit-svc');
-    if (btnEditSvc) { ST.svcModal = { oldVal: btnEditSvc.getAttribute("data-editsvc") }; renderModals(); return; }
-    
-    var btnDelSvc = e.target.closest('.del-svc');
-    if (btnDelSvc) {
-        var valSvcDel = btnDelSvc.getAttribute("data-svc");
-        ST.services = ST.services.filter(function(s){return s !== valSvcDel;}); saveConfig(); renderApp(); return;
-    }
-
-    // --- PARAMETRES : GROUPES ---
-    if (e.target.closest('#addGrpBtn')) {
-        var valGrp = document.getElementById("newGrp").value.trim();
-        if(valGrp && ST.groupes.indexOf(valGrp) === -1){ ST.groupes.push(valGrp); ST.groupes.sort(); saveConfig(); renderApp(); }
-        return;
-    }
-    var btnEditGrp = e.target.closest('.edit-grp');
-    if (btnEditGrp) { ST.grpModal = { oldVal: btnEditGrp.getAttribute("data-editgrp") }; renderModals(); return; }
-    
-    var btnDelGrp = e.target.closest('.del-grp');
-    if (btnDelGrp) {
-        var valDelGrp = btnDelGrp.getAttribute("data-grp");
-        ST.groupes = ST.groupes.filter(function(g){return g !== valDelGrp;}); saveConfig(); renderApp(); return;
-    }
+    if (e.target.closest('#addP')) { ST.eModal = {}; renderApp(); return; }
+    var btnEp = e.target.closest('.edit-pers'); if (btnEp) { ST.eModal = { pid: parseInt(btnEp.getAttribute("data-ep")) }; renderApp(); return; }
+    if (e.target.closest('#addC')) { ST.pModal = {}; renderApp(); return; }
+    var btnEc = e.target.closest('.edit-cause'); if (btnEc) { ST.pModal = Object.assign({}, ST.causes.find(c=>c.id===parseInt(btnEc.getAttribute("data-ec")))); renderApp(); return; }
+    if (e.target.closest('#addSvcBtn')) { var valSvc = document.getElementById("newSvc").value.trim(); if(valSvc && ST.services.indexOf(valSvc) === -1){ ST.services.push(valSvc); ST.services.sort(); saveConfig(); renderApp(); } return; }
+    var btnEditSvc = e.target.closest('.edit-svc'); if (btnEditSvc) { ST.svcModal = { oldVal: btnEditSvc.getAttribute("data-editsvc") }; renderModals(); return; }
+    var btnDelSvc = e.target.closest('.del-svc'); if (btnDelSvc) { ST.services = ST.services.filter(s=>s !== btnDelSvc.getAttribute("data-svc")); saveConfig(); renderApp(); return; }
+    if (e.target.closest('#addGrpBtn')) { var valGrp = document.getElementById("newGrp").value.trim(); if(valGrp && ST.groupes.indexOf(valGrp) === -1){ ST.groupes.push(valGrp); ST.groupes.sort(); saveConfig(); renderApp(); } return; }
+    var btnEditGrp = e.target.closest('.edit-grp'); if (btnEditGrp) { ST.grpModal = { oldVal: btnEditGrp.getAttribute("data-editgrp") }; renderModals(); return; }
+    var btnDelGrp = e.target.closest('.del-grp'); if (btnDelGrp) { ST.groupes = ST.groupes.filter(g=>g !== btnDelGrp.getAttribute("data-grp")); saveConfig(); renderApp(); return; }
 });
 
-
-// === GESTION DU DRAG & DROP (SAISIE RAPIDE MULTIPLE) ===
 document.addEventListener("mousedown", function(e) {
     if (e.button !== 0 || !ST.selectedCauseId) return; 
     var ec = e.target.closest('.ec[data-pid]');
     if (ec) {
         e.preventDefault(); 
         var pid = parseInt(ec.getAttribute("data-pid"));
-        var day = parseInt(ec.getAttribute("data-day"));
-        var mo = parseInt(ec.getAttribute("data-month"));
-        if(pid && day) {
-            ST.drag.active = true;
-            ST.drag.pid = pid;
-            ST.drag.startDt = new Date(ST.year, mo, day).getTime();
-            ST.drag.endDt = ST.drag.startDt;
-            updateDragHighlight();
-        }
+        if (!ST.isAdmin && String(pid) !== String(ST.currentUser)) { showToast("Vous ne pouvez modifier que votre propre planning.", true); return; }
+        var day = parseInt(ec.getAttribute("data-day")), mo = parseInt(ec.getAttribute("data-month"));
+        if(pid && day) { ST.drag.active = true; ST.drag.pid = pid; ST.drag.startDt = new Date(ST.year, mo, day).getTime(); ST.drag.endDt = ST.drag.startDt; updateDragHighlight(); }
     }
 });
 
 document.addEventListener("mouseover", function(e) {
     if(!ST.drag.active) return;
     var ec = e.target.closest('.ec[data-pid]');
-    if (ec) {
-        var pid = parseInt(ec.getAttribute("data-pid"));
-        if(pid === ST.drag.pid) {
-            var day = parseInt(ec.getAttribute("data-day"));
-            var mo = parseInt(ec.getAttribute("data-month"));
-            ST.drag.endDt = new Date(ST.year, mo, day).getTime();
-            updateDragHighlight();
-        }
-    }
+    if (ec && parseInt(ec.getAttribute("data-pid")) === ST.drag.pid) { ST.drag.endDt = new Date(ST.year, parseInt(ec.getAttribute("data-month")), parseInt(ec.getAttribute("data-day"))).getTime(); updateDragHighlight(); }
 });
 
 document.addEventListener("mouseup", function(e) {
-    if(e.button === 0 && ST.drag.active) {
-        ST.drag.active = false;
-        processDragSelection();
-        updateDragHighlight(); 
-    }
+    if(e.button === 0 && ST.drag.active) { ST.drag.active = false; processDragSelection(); updateDragHighlight(); }
 });
 
 document.addEventListener("contextmenu", function(e) {
     var ec = e.target.closest('.ec[data-pid]');
     if(ec) {
-        e.preventDefault();
-        var pid = parseInt(ec.getAttribute("data-pid"));
-        var day = parseInt(ec.getAttribute("data-day"));
-        var mo = parseInt(ec.getAttribute("data-month"));
-        var key = ec.getAttribute("data-key");
-        if(pid && day) {
-            ST.modal = {pid:pid, day:day, month:mo, key:key};
-            renderModals();
-        }
+        e.preventDefault(); var pid = parseInt(ec.getAttribute("data-pid"));
+        if (!ST.isAdmin && String(pid) !== String(ST.currentUser)) { showToast("Vous ne pouvez modifier que votre propre planning.", true); return; }
+        var day = parseInt(ec.getAttribute("data-day")), mo = parseInt(ec.getAttribute("data-month")), key = ec.getAttribute("data-key");
+        if(pid && day) { ST.modal = {pid:pid, day:day, month:mo, key:key}; renderApp(); }
     }
 });
 
-
-// === EVENEMENTS APP PRINCIPALE ===
 function bindAppEvents(){
-  var navTabs=document.querySelectorAll(".nav-tab");
-  for(var i=0;i<navTabs.length;i++){(function(t){t.addEventListener("click",function(){
-      if(t.id === "lockBtn" || t.id === "themeToggle") return; 
-      if(t.hasAttribute("data-tab")) {
-          ST.tab=t.getAttribute("data-tab");renderApp();
-      }
-  });})(navTabs[i]);}
+  document.querySelectorAll(".nav-tab").forEach(t=>t.addEventListener("click", e=>{ if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn")return; if(t.hasAttribute("data-tab")){ST.tab=t.getAttribute("data-tab");renderApp();} }));
+  var lgBtn = document.getElementById("logoutBtn"); if(lgBtn) lgBtn.addEventListener("click", ()=>{ localStorage.removeItem('artt-user'); ST.isAdmin=false; ST.currentUser=null; renderApp(); });
+  var thTog = document.getElementById("themeToggle"); if(thTog) thTog.addEventListener("click", ()=>{ var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'; document.documentElement.setAttribute('data-theme',n); localStorage.setItem('artt-theme',n); renderApp(); });
+  var pY=document.getElementById("pY"); if(pY)pY.addEventListener("click", ()=>{ST.year--;renderApp();});
+  var nY=document.getElementById("nY"); if(nY)nY.addEventListener("click", ()=>{ST.year++;renderApp();});
   
-  var themeToggle = document.getElementById("themeToggle");
-  if(themeToggle) {
-      themeToggle.addEventListener("click", function() {
-          var currentTheme = document.documentElement.getAttribute('data-theme');
-          var newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-          document.documentElement.setAttribute('data-theme', newTheme);
-          localStorage.setItem('artt-theme', newTheme);
-          renderApp(); 
-      });
-  }
-
-  var pY=document.getElementById("pY"),nY=document.getElementById("nY");
-  if(pY)pY.addEventListener("click",function(){ST.year--;renderApp();});
-  if(nY)nY.addEventListener("click",function(){ST.year++;renderApp();});
+  var aC = document.getElementById("adminCode"); if(aC) aC.addEventListener("input", e=>{ if(e.target.value==="2214"){ST.isAdmin=true;ST.tab='personnel';renderApp();showToast("Mode Administrateur activé");} });
+  var lB = document.getElementById("lockBtn"); if(lB) lB.addEventListener("click", ()=>{ ST.isAdmin=false; if(ST.tab!=='planning')ST.tab='planning'; renderApp(); });
   
-  var adminCode = document.getElementById("adminCode");
-  if(adminCode) {
-      adminCode.addEventListener("input", function(e) {
-          if(e.target.value === "2214") {
-              ST.isAdmin = true;
-              renderApp();
-          }
+  document.querySelectorAll(".month-btn").forEach(b=>b.addEventListener("click", e=>{ var m=e.currentTarget.getAttribute("data-month"), el=document.getElementById("m-start-"+m), gc=document.querySelector(".gc"); if(el&&gc){ ST.ignoreScroll=true; gc.scrollTo({left:el.offsetLeft-getNameColWidth(), behavior:"smooth"}); setTimeout(()=>{ST.ignoreScroll=false;ST.lastScrollX=gc.scrollLeft;},500); } }));
+  
+  var gcElem = document.querySelector(".gc"); if(gcElem && ST.tab==="planning") gcElem.addEventListener("scroll", ()=>{ if(ST.ignoreScroll)return; ST.lastScrollX=gcElem.scrollLeft; ST.lastScrollY=gcElem.scrollTop; updateMonthHighlight(gcElem.scrollLeft); });
+  var calElem = document.querySelector(".cal-wrapper"); if(calElem && ST.tab==="calendrier") calElem.addEventListener("scroll", ()=>{ if(ST.ignoreScroll)return; ST.scrollCalX=calElem.scrollLeft; ST.scrollCalY=calElem.scrollTop; });
+  
+  var calSvc=document.getElementById("calSvc"); if(calSvc) calSvc.addEventListener("change", ()=>{ST.calSvc=calSvc.value;ST.calPid="";renderApp();});
+  var calPid=document.getElementById("calPid"); if(calPid) calPid.addEventListener("change", ()=>{ST.calPid=calPid.value;renderApp();});
+  
+  var fSvc=document.getElementById("fSvc"); if(fSvc)fSvc.addEventListener("change", ()=>{ST.fSvc=fSvc.value;renderApp();});
+  var fGrp=document.getElementById("fGrp"); if(fGrp)fGrp.addEventListener("change", ()=>{ST.fGrp=fGrp.value;renderApp();});
+  var fSearch=document.getElementById("fSearch"); if(fSearch)fSearch.addEventListener("input", e=>{ST.fSearch=e.target.value;renderApp();});
+  
+  var bS0=document.getElementById("bS0"); if(bS0)bS0.addEventListener("click", ()=>{ST.bModal={type:"semaine_courante"};renderApp();});
+  var bS1=document.getElementById("bS1"); if(bS1)bS1.addEventListener("click", ()=>{ST.bModal={type:"semaine"};renderApp();});
+  var bS_next=document.getElementById("bS_next"); if(bS_next)bS_next.addEventListener("click", ()=>{ST.bModal={type:"semaine_prochaine"};renderApp();});
+  var bM1=document.getElementById("bM1"); if(bM1)bM1.addEventListener("click", ()=>{ST.bModal={type:"mois"};renderApp();});
+  var bAn=document.getElementById("bAn"); if(bAn)bAn.addEventListener("click", ()=>{ST.bModal={type:"conge"};renderApp();});
+  
+  document.querySelectorAll(".btn-bp[data-bpp]").forEach(b=>b.addEventListener("click", ()=>{ ST.bModal={type:"person", pid:parseInt(b.getAttribute("data-bpp"))}; renderApp(); }));
+  var bHelp = document.getElementById("bHelp"); if(bHelp)bHelp.addEventListener("click", ()=>{ST.tutoModal=true;renderApp();});
+  
+  document.querySelectorAll(".legend-pill[data-cause]").forEach(p=>p.addEventListener("click", e=>{ var cidAttr=e.currentTarget.getAttribute("data-cause"), cid=(cidAttr==='erase')?'erase':parseInt(cidAttr); ST.selectedCauseId=(ST.selectedCauseId===cid)?null:cid; document.querySelectorAll(".legend-pill[data-cause]").forEach(pl=>{ var pCid=pl.getAttribute("data-cause")==='erase'?'erase':parseInt(pl.getAttribute("data-cause")); if(pCid===ST.selectedCauseId){pl.classList.add("active");pl.style.borderColor=pl.style.color;}else{pl.classList.remove("active");pl.style.borderColor="transparent";} }); }));
+  document.querySelectorAll(".period-btn[data-period]").forEach(b=>b.addEventListener("click", e=>{ ST.selectedPeriod=e.currentTarget.getAttribute("data-period"); document.querySelectorAll(".period-btn").forEach(pb=>pb.classList.remove("active")); e.currentTarget.classList.add("active"); }));
+  
+  var btnExport = document.getElementById("btnExportGlobalXlsx"); if(btnExport) btnExport.addEventListener("click", ()=>{
+      if(typeof XLSX === 'undefined') { showToast("Patientez, chargement de l'export...", true); return; }
+      var data = [["Date", "Employé", "Service", "Groupe", "Cause", "Période", "Commentaire"]];
+      var keys = Object.keys(ST.events).filter(k=>k!=="__personnels__"&&k.split('-').length>=4).sort((a,b)=>new Date(a.split('-')[1],a.split('-')[2],a.split('-')[3]).getTime()-new Date(b.split('-')[1],b.split('-')[2],b.split('-')[3]).getTime());
+      keys.forEach(k => {
+          var ev=ST.events[k], pts=k.split('-'), p=ST.personnels.find(x=>String(x.id)===pts[0]), dtStr=p2(pts[3])+"/"+p2(parseInt(pts[2])+1)+"/"+pts[1]; if(!p)return;
+          if(ev.type==='full') data.push([dtStr,p.nom,p.service,p.groupe,cLabel(ev.causeId),'Jour entier',ev.comment==="Import Excel"?"":ev.comment||""]);
+          else if(ev.type==='half'){ if(ev.am)data.push([dtStr,p.nom,p.service,p.groupe,cLabel(ev.am.causeId),'Matin',ev.am.comment==="Import Excel"?"":ev.am.comment||""]); if(ev.pm)data.push([dtStr,p.nom,p.service,p.groupe,cLabel(ev.pm.causeId),'Après-midi',ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]); }
       });
-  }
-  var lockBtn = document.getElementById("lockBtn");
-  if(lockBtn) {
-      lockBtn.addEventListener("click", function() {
-          ST.isAdmin = false;
-          if(ST.tab !== 'planning') ST.tab = 'planning';
-          renderApp();
-      });
-  }
-
-  var mbs=document.querySelectorAll(".month-btn");
-  for(var i=0;i<mbs.length;i++){(function(b){
-      b.addEventListener("click",function(e){
-          var m=e.currentTarget.getAttribute("data-month");
-          var el=document.getElementById("m-start-"+m);
-          var gc=document.querySelector(".gc");
-          if(el && gc) {
-              var offset = el.offsetLeft - getNameColWidth(); 
-              gc.scrollTo({left: offset, behavior: "smooth"});
-          }
-      });
-  })(mbs[i]);}
-
-  var gcElem = document.querySelector(".gc");
-  if(gcElem && ST.tab === "planning") {
-      gcElem.addEventListener("scroll", function() {
-          if(ST.ignoreScroll) return;
-          var sl = gcElem.scrollLeft;
-          if (sl === 0 && ST.scrollPlanX > 0 && gcElem.scrollWidth <= gcElem.clientWidth) return;
-          ST.scrollPlanX = sl; 
-          ST.scrollPlanY = gcElem.scrollTop;
-          
-          var activeM = 0;
-          for(var m=11; m>=0; m--) {
-              var el = document.getElementById("m-start-" + m);
-              if(el && (el.offsetLeft - getNameColWidth()) <= sl + 150) { 
-                  activeM = m;
-                  break;
-              }
-          }
-          document.querySelectorAll(".month-btn").forEach(function(b) {
-              if(parseInt(b.getAttribute("data-month")) === activeM) b.classList.add("active");
-              else b.classList.remove("active");
-          });
-      });
-  }
-
-  var calElem = document.querySelector(".cal-wrapper");
-  if(calElem && ST.tab === "calendrier") {
-      calElem.addEventListener("scroll", function() {
-          if(ST.ignoreScroll) return;
-          ST.scrollCalX = calElem.scrollLeft;
-          ST.scrollCalY = calElem.scrollTop;
-      });
-  }
-
-  var calSvc=document.getElementById("calSvc"), calPid=document.getElementById("calPid");
-  if(calSvc) calSvc.addEventListener("change",function(){ 
-      ST.calSvc = calSvc.value; 
-      ST.calPid = ""; 
-      renderApp(); 
-  });
-  if(calPid) calPid.addEventListener("change",function(){
-      ST.calPid = calPid.value;
-      renderApp();
+      var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), "Absences"); XLSX.writeFile(wb, "Planning_Absences_" + ST.year + ".xlsx"); showToast("Export réussi");
   });
   
-  var fSvc=document.getElementById("fSvc"),fGrp=document.getElementById("fGrp"), fSearch=document.getElementById("fSearch");
-  if(fSvc)fSvc.addEventListener("change",function(){ST.fSvc=fSvc.value;renderApp();});
-  if(fGrp)fGrp.addEventListener("change",function(){ST.fGrp=fGrp.value;renderApp();});
-  if(fSearch)fSearch.addEventListener("input",function(e){ST.fSearch=e.target.value;renderApp();});
-  
-  var bS0=document.getElementById("bS0"),bS1=document.getElementById("bS1"),bM1=document.getElementById("bM1"),bAn=document.getElementById("bAn");
-  var bS_next=document.getElementById("bS_next");
-  if(bS0)bS0.addEventListener("click",function(){ST.bModal={type:"semaine_courante"};renderModals();});
-  if(bS1)bS1.addEventListener("click",function(){ST.bModal={type:"semaine"};renderModals();});
-  if(bS_next)bS_next.addEventListener("click",function(){ST.bModal={type:"semaine_prochaine"};renderModals();});
-  if(bM1)bM1.addEventListener("click",function(){ST.bModal={type:"mois"};renderModals();});
-  if(bAn)bAn.addEventListener("click",function(){ST.bModal={type:"conge"};renderModals();});
-  
-  var bpps=document.querySelectorAll(".btn-bp[data-bpp]");
-  for(var i=0;i<bpps.length;i++){(function(btn){
-      btn.addEventListener("click", function(){
-          ST.bModal={type:"person", pid: parseInt(btn.getAttribute("data-bpp"))};
-          renderModals();
-      });
-  })(bpps[i]);}
-  
-  var bHelp = document.getElementById("bHelp");
-  if(bHelp)bHelp.addEventListener("click",function(){ST.tutoModal=true;renderModals();});
-
-  // -- MODE PINCEAU --
-  var pills = document.querySelectorAll(".legend-pill[data-cause]");
-  for(var i=0;i<pills.length;i++){
-     pills[i].addEventListener("click", function(e) {
-         var cidAttr = e.currentTarget.getAttribute("data-cause");
-         var cid = (cidAttr === 'erase') ? 'erase' : parseInt(cidAttr);
-         ST.selectedCauseId = (ST.selectedCauseId === cid) ? null : cid;
-         
-         document.querySelectorAll(".legend-pill[data-cause]").forEach(function(p) {
-             var pCid = p.getAttribute("data-cause") === 'erase' ? 'erase' : parseInt(p.getAttribute("data-cause"));
-             if (pCid === ST.selectedCauseId) {
-                 p.classList.add("active");
-                 p.style.borderColor = p.style.color;
-             } else {
-                 p.classList.remove("active");
-                 p.style.borderColor = "transparent";
-             }
-         });
-     });
-  }
-  var pBtns = document.querySelectorAll(".period-btn[data-period]");
-  for(var i=0;i<pBtns.length;i++){
-     pBtns[i].addEventListener("click", function(e) {
-         ST.selectedPeriod = e.currentTarget.getAttribute("data-period");
-         document.querySelectorAll(".period-btn").forEach(function(b) { b.classList.remove("active"); });
-         e.currentTarget.classList.add("active");
-     });
-  }
-
-  // EXPORT EXCEL GLOBAL
-  var btnExportGlobalXlsx = document.getElementById("btnExportGlobalXlsx");
-  if(btnExportGlobalXlsx) {
-      btnExportGlobalXlsx.addEventListener("click", function() {
-          if(typeof XLSX === 'undefined') { showToast("Veuillez patienter, chargement de l'outil d'export...", true); return; }
-          var data = [["Date", "Employé", "Service", "Groupe", "Cause", "Période", "Commentaire"]];
-          var keys = Object.keys(ST.events);
-          keys.sort(function(a,b) {
-              var pA = a.split('-'), pB = b.split('-');
-              var dtA = new Date(pA[1], pA[2], pA[3]).getTime(), dtB = new Date(pB[1], pB[2], pB[3]).getTime();
-              return dtA - dtB;
-          });
-          for(var i=0; i<keys.length; i++) {
-              var k = keys[i];
-              if(k === "__personnels__") continue;
-              var ev = ST.events[k], parts = k.split('-'); 
-              if(parts.length < 4) continue;
-              var pid = parseInt(parts[0]);
-              var p = ST.personnels.find(function(x){ return x.id === pid; });
-              if(!p) continue;
-              var dateStr = p2(parts[3]) + "/" + p2(parseInt(parts[2])+1) + "/" + parts[1];
-              if(ev.type === 'full') {
-                  data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.causeId), 'Jour entier', ev.comment==="Import Excel"?"":ev.comment||""]);
-              } else if(ev.type === 'half') {
-                  if(ev.am) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.am.causeId), 'Matin', ev.am.comment==="Import Excel"?"":ev.am.comment||""]);
-                  if(ev.pm) data.push([dateStr, p.nom, p.service, p.groupe, cLabel(ev.pm.causeId), 'Après-midi', ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]);
-              }
-          }
-          var ws = XLSX.utils.aoa_to_sheet(data);
-          var wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Absences");
-          XLSX.writeFile(wb, "Planning_Absences_Usine_" + ST.year + ".xlsx");
-          showToast("Export XLSX réussi");
-      });
-  }
-
-  // IMPORT EXCEL
-  var btnImportExcel = document.getElementById("btnImportExcel");
-  var excelImportFile = document.getElementById("excelImportFile");
-  if(btnImportExcel && excelImportFile) {
-      btnImportExcel.addEventListener("click", function() {
-          if(!excelImportFile.files || !excelImportFile.files[0]) { showToast("Veuillez sélectionner un fichier Excel", true); return; }
-          var file = excelImportFile.files[0];
-          var reader = new FileReader();
-          reader.onload = function(e) { processExcelImport(e.target.result); };
-          reader.readAsArrayBuffer(file);
-      });
-  }
+  var btnImp = document.getElementById("btnImportExcel"), fImp = document.getElementById("excelImportFile");
+  if(btnImp && fImp) btnImp.addEventListener("click", ()=>{ if(!fImp.files||!fImp.files[0]){showToast("Sélectionnez un fichier Excel",true);return;} var r=new FileReader(); r.onload=e=>processExcelImport(e.target.result); r.readAsArrayBuffer(fImp.files[0]); });
 }
 
-// === EVENEMENTS DES MODALES (Séparé pour ne pas casser le scroll) ===
 function bindModalEvents() {
   var mOv=document.getElementById("mOv"),cMod=document.getElementById("cMod"),sMod=document.getElementById("sMod"),dEvBtn=document.getElementById("dEv");
-  if(mOv)mOv.addEventListener("click",function(e){if(e.target===mOv){ST.modal=null;renderModals();}});
-  if(cMod)cMod.addEventListener("click",function(){ST.modal=null;renderModals();});
-  
-  if(dEvBtn)dEvBtn.addEventListener("click",function(){
-    var key=ST.modal.key; delete ST.events[key]; ST.modal=null; renderModals();
-    var ec = document.querySelector('.ec[data-key="'+key+'"]');
-    if(ec) updateCellVisual(ec, key, ST.year, ec.getAttribute('data-month'), ec.getAttribute('data-day'));
-    saveEvsDB([], [key, key+'-am', key+'-pm']).then(function(){showToast("Absence supprimée");});
-  });
-  
-  if(sMod)sMod.addEventListener("click",function(){
-    var cid_am = parseInt(document.getElementById("mC_am").value) || null;
-    var cm_am = document.getElementById("mCm_am").value.trim();
-    var cid_pm = parseInt(document.getElementById("mC_pm").value) || null;
-    var cm_pm = document.getElementById("mCm_pm").value.trim();
-    var key = ST.modal.key;
-    
-    // Auto-swap si Astreinte a été mise dans l'après-midi par erreur dans la fenêtre
-    if (cid_pm) {
-        var cPmObj = ST.causes.find(function(c){return c.id === cid_pm;});
-        if (cPmObj && cPmObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
-            var tC = cid_am, tCm = cm_am;
-            cid_am = cid_pm; cm_am = cm_pm;
-            cid_pm = tC; cm_pm = tCm;
-        }
-    }
-
-    var upserts = [], deletes = [];
-    
-    if (cid_am && cid_pm && cid_am === cid_pm && cm_am === cm_pm) {
-        ST.events[key] = {type:'full', causeId:cid_am, comment:cm_am};
-        upserts.push({id:key, cause_id:cid_am, comment:cm_am});
-        deletes.push(key+'-am', key+'-pm');
-    } else if (cid_am || cid_pm) {
-        ST.events[key] = {type:'half', am:null, pm:null};
-        deletes.push(key); 
-        if (cid_am) { ST.events[key].am = {causeId:cid_am, comment:cm_am}; upserts.push({id:key+'-am', cause_id:cid_am, comment:cm_am}); } else { deletes.push(key+'-am'); }
-        if (cid_pm) { ST.events[key].pm = {causeId:cid_pm, comment:cm_pm}; upserts.push({id:key+'-pm', cause_id:cid_pm, comment:cm_pm}); } else { deletes.push(key+'-pm'); }
-    } else {
-        delete ST.events[key];
-        deletes.push(key, key+'-am', key+'-pm');
-    }
-    ST.modal=null; renderModals();
-    var ec = document.querySelector('.ec[data-key="'+key+'"]');
-    if(ec) updateCellVisual(ec, key, ST.year, ec.getAttribute('data-month'), ec.getAttribute('data-day'));
-    saveEvsDB(upserts, deletes).then(function(){showToast("Absence enregistrée");});
+  if(mOv)mOv.addEventListener("click", e=>{if(e.target===mOv){ST.modal=null;renderApp();}});
+  if(cMod)cMod.addEventListener("click", ()=>{ST.modal=null;renderApp();});
+  if(dEvBtn)dEvBtn.addEventListener("click", ()=>{ var k=ST.modal.key; delete ST.events[k]; ST.modal=null; renderApp(); saveEvsDB([], [k, k+'-am', k+'-pm']).then(()=>showToast("Absence supprimée")); });
+  if(sMod)sMod.addEventListener("click", ()=>{
+    var cAm=parseInt(document.getElementById("mC_am").value)||null, cmAm=document.getElementById("mCm_am").value.trim(), cPm=parseInt(document.getElementById("mC_pm").value)||null, cmPm=document.getElementById("mCm_pm").value.trim(), k=ST.modal.key;
+    if(cPm){ var cPmO=ST.causes.find(c=>c.id===cPm); if(cPmO&&cPmO.label.toUpperCase().indexOf('ASTREINTE')>-1){ var tc=cAm, tcm=cmAm; cAm=cPm; cmAm=cmPm; cPm=tc; cmPm=tcm; } }
+    var up=[], del=[];
+    if(cAm&&cPm&&cAm===cPm&&cmAm===cmPm){ ST.events[k]={type:'full',causeId:cAm,comment:cmAm}; up.push({id:k,cause_id:cAm,comment:cmAm}); del.push(k+'-am',k+'-pm'); }
+    else if(cAm||cPm){ ST.events[k]={type:'half',am:null,pm:null}; del.push(k); if(cAm){ST.events[k].am={causeId:cAm,comment:cmAm};up.push({id:k+'-am',cause_id:cAm,comment:cmAm});}else{del.push(k+'-am');} if(cPm){ST.events[k].pm={causeId:cPm,comment:cmPm};up.push({id:k+'-pm',cause_id:cPm,comment:cmPm});}else{del.push(k+'-pm');} }
+    else{ delete ST.events[k]; del.push(k,k+'-am',k+'-pm'); }
+    ST.modal=null; renderApp(); saveEvsDB(up, del).then(()=>showToast("Absence enregistrée"));
   });
   
   var cEd=document.getElementById("cEd"),sEd=document.getElementById("sEd"),dPer=document.getElementById("dPer");
-  if(cEd)cEd.addEventListener("click",function(){ST.eModal=null;renderModals();});
-  if(dPer)dPer.addEventListener("click",function(){
-    var pid=ST.eModal.pid; ST.personnels=ST.personnels.filter(function(p){return String(p.id)!==String(pid);});
-    ST.eModal=null; saveConfig(); renderApp();
-  });
-  if(sEd)sEd.addEventListener("click",function(){
-    var nom=document.getElementById("eNom").value;
-    var svc=document.getElementById("eSvc").value.trim();
-    var grp=document.getElementById("eGrp").value.trim();
-    var inactive=document.getElementById("eInactive").checked;
-    if(!nom)return;
-    if(svc && ST.services.indexOf(svc) === -1) ST.services.push(svc);
-    if(grp && ST.groupes.indexOf(grp) === -1) ST.groupes.push(grp);
-    
-    if(ST.eModal.pid){
-      for(var i=0;i<ST.personnels.length;i++){if(String(ST.personnels[i].id)===String(ST.eModal.pid)){
-          ST.personnels[i].nom=nom;
-          ST.personnels[i].service=svc;
-          ST.personnels[i].groupe=grp;
-          ST.personnels[i].inactive=inactive;
-          break;
-      }}
-    }else{
-      ST.personnels.push({id:Date.now(),nom:nom,service:svc,groupe:grp,inactive:inactive});
+  if(cEd)cEd.addEventListener("click", ()=>{ST.eModal=null;renderApp();});
+  if(dPer)dPer.addEventListener("click", ()=>{ ST.personnels=ST.personnels.filter(p=>String(p.id)!==String(ST.eModal.pid)); ST.eModal=null; saveConfig(); renderApp(); });
+  if(sEd)sEd.addEventListener("click", ()=>{
+    var nom=document.getElementById("eNom").value, svc=document.getElementById("eSvc").value.trim(), grp=document.getElementById("eGrp").value.trim(), inact=document.getElementById("eInactive").checked; if(!nom)return;
+    var rPwdCb = document.getElementById("eResetPwd");
+    var doReset = rPwdCb ? rPwdCb.checked : false;
+
+    if(svc&&ST.services.indexOf(svc)===-1)ST.services.push(svc); if(grp&&ST.groupes.indexOf(grp)===-1)ST.groupes.push(grp);
+    if(ST.eModal.pid){ 
+        var p=ST.personnels.find(x=>String(x.id)===String(ST.eModal.pid)); 
+        if(p){
+            p.nom=nom;p.service=svc;p.groupe=grp;p.inactive=inact;
+            if(doReset) delete p.pwd;
+        } 
     }
+    else{ ST.personnels.push({id:Date.now(),nom:nom,service:svc,groupe:grp,inactive:inact}); }
+    
     ST.eModal=null; saveConfig(); renderApp();
+    if(doReset) showToast("Mot de passe réinitialisé avec succès.");
   });
   
   var cPar=document.getElementById("cPar"),sPar=document.getElementById("sPar"),dPar=document.getElementById("dPar");
-  if(cPar)cPar.addEventListener("click",function(){ST.pModal=null;renderModals();});
-  if(dPar)dPar.addEventListener("click",function(){
-    var id=ST.pModal.id; ST.causes=ST.causes.filter(function(c){return c.id!==id;});
-    ST.pModal=null; saveConfig(); renderApp();
-  });
-  if(sPar)sPar.addEventListener("click",function(){
-    var lbl=document.getElementById("pLbl").value;
-    var col=document.getElementById("pCol").value;
-    var sh=document.getElementById("pSh").value;
-    if(!lbl)return;
-    if(ST.pModal.id){
-      for(var i=0;i<ST.causes.length;i++){if(ST.causes[i].id===ST.pModal.id){ST.causes[i].label=lbl;ST.causes[i].color=col;ST.causes[i].short=sh;break;}}
-    }else{
-      var maxId=0;
-      for(var i=0;i<ST.causes.length;i++){ if(ST.causes[i].id>maxId) maxId=ST.causes[i].id; }
-      ST.causes.push({id:maxId+1,label:lbl,color:col,short:sh||String(maxId+1)});
-    }
+  if(cPar)cPar.addEventListener("click", ()=>{ST.pModal=null;renderApp();});
+  if(dPar)dPar.addEventListener("click", ()=>{ ST.causes=ST.causes.filter(c=>c.id!==ST.pModal.id); ST.pModal=null; saveConfig(); renderApp(); });
+  if(sPar)sPar.addEventListener("click", ()=>{
+    var lbl=document.getElementById("pLbl").value, col=document.getElementById("pCol").value, sh=document.getElementById("pSh").value; if(!lbl)return;
+    if(ST.pModal.id){ var c=ST.causes.find(x=>x.id===ST.pModal.id); if(c){c.label=lbl;c.color=col;c.short=sh;} }
+    else{ ST.causes.push({id:Math.max(0,...ST.causes.map(c=>c.id))+1,label:lbl,color:col,short:sh||String(Math.max(0,...ST.causes.map(c=>c.id))+1)}); }
     ST.pModal=null; saveConfig(); renderApp();
   });
 
   var cSvc=document.getElementById("cSvc"), sSvc=document.getElementById("sSvc"), svcOv=document.getElementById("svcOv");
-  if(cSvc) cSvc.addEventListener("click", function(){ ST.svcModal=null; renderModals(); });
-  if(svcOv) svcOv.addEventListener("click", function(e){ if(e.target===svcOv){ ST.svcModal=null; renderModals(); } });
-  if(sSvc) sSvc.addEventListener("click", function(){
-      var newVal = document.getElementById("editSvcVal").value.trim();
-      if(newVal && newVal !== ST.svcModal.oldVal) {
-          var idx = ST.services.indexOf(ST.svcModal.oldVal);
-          if(idx > -1) ST.services[idx] = newVal;
-          ST.personnels.forEach(function(p){ if(p.service === ST.svcModal.oldVal) p.service = newVal; });
-          ST.services.sort();
-          ST.svcModal = null;
-          saveConfig(); renderApp();
-      } else {
-          ST.svcModal = null; renderModals();
-      }
-  });
+  if(cSvc) cSvc.addEventListener("click", ()=>{ ST.svcModal=null; renderModals(); });
+  if(svcOv) svcOv.addEventListener("click", e=>{ if(e.target===svcOv){ ST.svcModal=null; renderModals(); } });
+  if(sSvc) sSvc.addEventListener("click", ()=>{ var nv=document.getElementById("editSvcVal").value.trim(); if(nv&&nv!==ST.svcModal.oldVal){ ST.services[ST.services.indexOf(ST.svcModal.oldVal)]=nv; ST.personnels.forEach(p=>{if(p.service===ST.svcModal.oldVal)p.service=nv;}); ST.services.sort(); ST.svcModal=null; saveConfig(); renderApp(); }else{ ST.svcModal=null; renderModals(); } });
 
   var cGrp=document.getElementById("cGrp"), sGrp=document.getElementById("sGrp"), grpOv=document.getElementById("grpOv");
-  if(cGrp) cGrp.addEventListener("click", function(){ ST.grpModal=null; renderModals(); });
-  if(grpOv) grpOv.addEventListener("click", function(e){ if(e.target===grpOv){ ST.grpModal=null; renderModals(); } });
-  if(sGrp) sGrp.addEventListener("click", function(){
-      var newVal = document.getElementById("editGrpVal").value.trim();
-      if(newVal && newVal !== ST.grpModal.oldVal) {
-          var idx = ST.groupes.indexOf(ST.grpModal.oldVal);
-          if(idx > -1) ST.groupes[idx] = newVal;
-          ST.personnels.forEach(function(p){ if(p.groupe === ST.grpModal.oldVal) p.groupe = newVal; });
-          ST.groupes.sort();
-          ST.grpModal = null;
-          saveConfig(); renderApp();
-      } else {
-          ST.grpModal = null; renderModals();
-      }
-  });
+  if(cGrp) cGrp.addEventListener("click", ()=>{ ST.grpModal=null; renderModals(); });
+  if(grpOv) grpOv.addEventListener("click", e=>{ if(e.target===grpOv){ ST.grpModal=null; renderModals(); } });
+  if(sGrp) sGrp.addEventListener("click", ()=>{ var nv=document.getElementById("editGrpVal").value.trim(); if(nv&&nv!==ST.grpModal.oldVal){ ST.groupes[ST.groupes.indexOf(ST.grpModal.oldVal)]=nv; ST.personnels.forEach(p=>{if(p.groupe===ST.grpModal.oldVal)p.groupe=nv;}); ST.groupes.sort(); ST.grpModal=null; saveConfig(); renderApp(); }else{ ST.grpModal=null; renderModals(); } });
   
   var bmFs=document.getElementById("bmFs"),bmFg=document.getElementById("bmFg"),bCsv=document.getElementById("bCsv");
-  if(bmFs)bmFs.addEventListener("change",function(){ST.bModal.fs=bmFs.value;renderModals();});
-  if(bmFg)bmFg.addEventListener("change",function(){ST.bModal.fg=bmFg.value;renderModals();});
-  if(bCsv)bCsv.addEventListener("click",function(){exportCSV(ST._currentCsvName, ST._currentCsv);});
+  if(bmFs)bmFs.addEventListener("change", ()=>{ST.bModal.fs=bmFs.value;renderModals();});
+  if(bmFg)bmFg.addEventListener("change", ()=>{ST.bModal.fg=bmFg.value;renderModals();});
+  if(bCsv)bCsv.addEventListener("click", ()=>{exportCSV(ST._currentCsvName, ST._currentCsv);});
   var clBm=document.getElementById("clBm"),bmOv=document.getElementById("bmOv");
-  if(clBm)clBm.addEventListener("click",function(){ST.bModal=null;renderModals();});
-  if(bmOv)bmOv.addEventListener("click",function(e){if(e.target===bmOv){ST.bModal=null;renderModals();}});
+  if(clBm)clBm.addEventListener("click", ()=>{ST.bModal=null;renderApp();});
+  if(bmOv)bmOv.addEventListener("click", e=>{if(e.target===bmOv){ST.bModal=null;renderApp();}});
   
-  var clTuto = document.getElementById("clTuto"), tutoOv = document.getElementById("tutoOv"), btnGotIt = document.getElementById("btnGotIt");
-  if(clTuto)clTuto.addEventListener("click",function(){ST.tutoModal=false;renderModals();});
-  if(btnGotIt)btnGotIt.addEventListener("click",function(){ST.tutoModal=false;renderModals();});
-  if(tutoOv)tutoOv.addEventListener("click",function(e){if(e.target===tutoOv){ST.tutoModal=false;renderModals();}});
+  var clTuto=document.getElementById("clTuto"), tutoOv=document.getElementById("tutoOv"), btnGotIt=document.getElementById("btnGotIt");
+  if(clTuto)clTuto.addEventListener("click", ()=>{ST.tutoModal=false;renderApp();});
+  if(btnGotIt)btnGotIt.addEventListener("click", ()=>{ST.tutoModal=false;renderApp();});
+  if(tutoOv)tutoOv.addEventListener("click", e=>{if(e.target===tutoOv){ST.tutoModal=false;renderApp();}});
 }
 
-// === DEMARRAGE ET SYNCHRONISATION OPTIMISÉE ===
+// === DEMARRAGE ===
 if(checkGasUrl()) {
     renderApp();
-
     loadDB().then(function(res){
-      if(res){
-        ST.events = Object.assign({}, XLS, res.events);
-        if(res.personnels && res.personnels.length > 0){ ST.personnels = res.personnels; }
-        if(res.causes && res.causes.length > 0){ ST.causes = res.causes; }
-        if(res.services && res.services.length > 0){ ST.services = res.services; }
-        if(res.groupes && res.groupes.length > 0){ ST.groupes = res.groupes; }
-      }
-      ST.loaded = true;
-      renderApp();
-      
-      // Auto-centrage uniquement au premier chargement réussi
-      if(!ST.initialScrollDone) {
-          scrollTd();
-          ST.initialScrollDone = true;
-      }
-      
-      showToast("Planning synchronisé");
+      if(res){ ST.events=Object.assign({},XLS,res.events); if(res.personnels&&res.personnels.length>0)ST.personnels=res.personnels; if(res.causes&&res.causes.length>0)ST.causes=res.causes; if(res.services&&res.services.length>0)ST.services=res.services; if(res.groupes&&res.groupes.length>0)ST.groupes=res.groupes; }
+      ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Planning synchronisé");
     }).catch(function(e){
-      console.warn("Base de données inaccessible, passage en mode hors ligne.");
-      ST.loaded = true;
-      renderApp();
-      
-      // Auto-centrage même en cas d'erreur locale (hors ligne)
-      if(!ST.initialScrollDone) {
-          scrollTd();
-          ST.initialScrollDone = true;
-      }
-      
-      showToast("Mode hors ligne activé", true);
+      console.warn("Mode hors ligne"); ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Mode hors ligne activé", true);
     });
 
     setInterval(function(){
       loadDB().then(function(res){
         if(res){
-          var oldEvStr = JSON.stringify(ST.events);
-          var oldPStr = JSON.stringify(ST.personnels);
-          var oldCStr = JSON.stringify(ST.causes);
-          var oldSStr = JSON.stringify(ST.services);
-          var oldGStr = JSON.stringify(ST.groupes);
-          
-          var tempEvents = Object.assign({}, XLS, res.events);
-          var tempPers = (res.personnels && res.personnels.length > 0) ? res.personnels : ST.personnels;
-          var tempCauses = (res.causes && res.causes.length > 0) ? res.causes : ST.causes;
-          var tempSvc = (res.services && res.services.length > 0) ? res.services : ST.services;
-          var tempGrp = (res.groupes && res.groupes.length > 0) ? res.groupes : ST.groupes;
-          
-          if (JSON.stringify(tempEvents) !== oldEvStr || 
-              JSON.stringify(tempPers) !== oldPStr || 
-              JSON.stringify(tempCauses) !== oldCStr || 
-              JSON.stringify(tempSvc) !== oldSStr || 
-              JSON.stringify(tempGrp) !== oldGStr) {
-              
-              ST.events = tempEvents;
-              ST.personnels = tempPers;
-              ST.causes = tempCauses;
-              ST.services = tempSvc;
-              ST.groupes = tempGrp;
-              
-              if(ST.tab === "planning" && !ST.modal && !ST.bModal && !ST.tutoModal && !ST.eModal && !ST.pModal && !ST.svcModal && !ST.grpModal) {
-                  renderApp();
-              }
+          var oE=JSON.stringify(ST.events), oP=JSON.stringify(ST.personnels), oC=JSON.stringify(ST.causes), oS=JSON.stringify(ST.services), oG=JSON.stringify(ST.groupes);
+          var tE=Object.assign({},XLS,res.events), tP=(res.personnels&&res.personnels.length>0)?res.personnels:ST.personnels, tC=(res.causes&&res.causes.length>0)?res.causes:ST.causes, tS=(res.services&&res.services.length>0)?res.services:ST.services, tG=(res.groupes&&res.groupes.length>0)?res.groupes:ST.groupes;
+          if (JSON.stringify(tE)!==oE || JSON.stringify(tP)!==oP || JSON.stringify(tC)!==oC || JSON.stringify(tS)!==oS || JSON.stringify(tG)!==oG) {
+              ST.events=tE; ST.personnels=tP; ST.causes=tC; ST.services=tS; ST.groupes=tG;
+              if(ST.tab==="planning"&&!ST.modal&&!ST.bModal&&!ST.tutoModal) renderApp();
           }
         }
       });
@@ -2722,7 +1125,6 @@ if(checkGasUrl()) {
 } else {
     renderApp();
 }
-
 </script>
 </body>
 </html>
