@@ -23,10 +23,11 @@
 }
 body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13px; overflow:hidden;}
 
-/* Scrollbar styles for smooth horizontal scrolling */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background-color: var(--bd2); border-radius: 4px; }
-::-webkit-scrollbar-track { background-color: transparent; }
+/* === BARRES DE DÉFILEMENT (ASCENSEURS) === */
+::-webkit-scrollbar { width: 10px; height: 14px; }
+::-webkit-scrollbar-thumb { background-color: var(--tx3); border-radius: 8px; border: 3px solid var(--bg3); }
+::-webkit-scrollbar-thumb:hover { background-color: var(--tx2); }
+::-webkit-scrollbar-track { background-color: var(--bg2); border-radius: 8px; }
 
 /* === LAYOUT PRINCIPAL === */
 .app{display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden;}
@@ -86,7 +87,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .month-btn.active{background:var(--primary);color:white;border-color:var(--primary);box-shadow:0 2px 5px rgba(29,158,117,0.3)}
 
 /* === GRILLE DE PLANNING === */
-.gc{flex:1;overflow:auto; scroll-behavior: smooth; min-height:0;}
+.gc{flex:1;overflow:auto; scroll-behavior: smooth; min-height:0; padding-bottom: 10px;}
 .ghdr{display:flex;flex-direction:column;position:sticky;top:0;z-index:20;background:var(--bg1);box-shadow:0 2px 5px rgba(0,0,0,0.05)}
 
 .ghdr-w, .ghdr-d { display:flex; min-width: max-content; background:var(--bg1); } 
@@ -126,13 +127,18 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .ec.va{background-color:#dbeafe}
 .ec.we{background-color:var(--bg2)}
 .ec.ms{border-left:2px solid var(--bd2)}
+
+/* EFFET VISUEL PENDANT LE GLISSER-DEPOSER */
+.drag-hl { position: relative; }
+.drag-hl::after { content: ''; position: absolute; inset: 0; background: rgba(29, 158, 117, 0.3); border: 2px dashed var(--primary); z-index: 10; pointer-events: none; border-radius: inherit; }
+
 .ev-l{font-size:12px;font-weight:900;color:white;text-shadow:0 1px 2px rgba(0,0,0,0.8); z-index:2;}
 .ev-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:white;box-shadow:0 0 2px rgba(0,0,0,0.8); z-index:2;}
 
 /* === CALENDRIER PERSONNEL === */
 .cal-wrapper { flex:1; overflow:auto; background:var(--bg3); padding:8px 16px; scroll-behavior: smooth; min-height:0; }
-.cal-grid { display:flex; gap:8px; min-width:max-content; height:100%; padding-bottom:8px; }
-.cal-col { width:130px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; height:100%; }
+.cal-grid { display:flex; gap:8px; min-width:100%; height:100%; padding-bottom:8px; }
+.cal-col { flex:1; min-width:120px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; height:100%; }
 .cal-month-name { background:var(--bg2); color:var(--primary); text-align:center; padding:6px 0; font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:1px; position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd2); flex-shrink:0; }
 .cal-row { display:flex; border-bottom:1px solid var(--bd2); flex:1; min-height:16px; box-sizing:border-box; overflow:hidden; }
 .cal-row.empty { background:var(--bg2); border-bottom:none; flex:1; min-height:16px; }
@@ -867,6 +873,7 @@ var ST={
   scrollCalY: 0,
   initialScrollDone: false,
   ignoreScroll: false,
+  drag: { active: false, pid: null, startDt: null, endDt: null }, // GESTION DU GLISSER DEPOSER
   events: JSON.parse(JSON.stringify(XLS)),
   causes:CD.map(function(c){return {id:c.id,label:c.label,color:c.color,short:c.short};}),
   services:["Avenir","CG","DL-producteur","DU","Flux","Maintenance","Perf & Sécu","Production","Qualité, Environnement","Restaurant","RH","Sécurité"],
@@ -1168,6 +1175,164 @@ function updateCellVisual(ec, baseKey, y, mo, d) {
         applyCellVisuals(ec, ST.events[baseKey]);
     }
 }
+
+// === GESTION DU GLISSER-DEPOSER (Drag & Paint) ===
+function updateDragHighlight() {
+    document.querySelectorAll('.drag-hl').forEach(function(el) { el.classList.remove('drag-hl'); });
+    if(!ST.drag.active) return;
+    
+    var minDt = Math.min(ST.drag.startDt, ST.drag.endDt);
+    var maxDt = Math.max(ST.drag.startDt, ST.drag.endDt);
+    
+    var ecs = document.querySelectorAll(".ec[data-pid='"+ST.drag.pid+"']");
+    for(var i=0; i<ecs.length; i++) {
+        var mo = parseInt(ecs[i].getAttribute("data-month"));
+        var day = parseInt(ecs[i].getAttribute("data-day"));
+        var dt = new Date(ST.year, mo, day).getTime();
+        if(dt >= minDt && dt <= maxDt) {
+            ecs[i].classList.add('drag-hl');
+        }
+    }
+}
+
+function processDragSelection() {
+    var minDt = Math.min(ST.drag.startDt, ST.drag.endDt);
+    var maxDt = Math.max(ST.drag.startDt, ST.drag.endDt);
+    var pid = ST.drag.pid;
+    
+    var upserts = [];
+    var deletes = [];
+    var conflicts = 0;
+
+    for(var d = new Date(minDt); d.getTime() <= maxDt; d.setDate(d.getDate()+1)) {
+        var mo = d.getMonth();
+        var day = d.getDate();
+        var baseKey = eKey(pid, ST.year, mo, day);
+        var existing = ST.events[baseKey];
+
+        if (ST.selectedCauseId === 'erase') {
+            if (existing) {
+                delete ST.events[baseKey];
+                deletes.push(baseKey, baseKey+'-am', baseKey+'-pm');
+            }
+        } else {
+            var targetPeriod = ST.selectedPeriod;
+            var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
+            var isAstreinte = causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1;
+            if(isAstreinte) targetPeriod = 'am';
+
+            var conflict = false;
+            var bypassSpecial = false;
+
+            if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
+                var oldCause = existing.causeId;
+                var oldCmt = existing.comment;
+                ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
+                upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
+                upserts.push({id: baseKey+'-pm', cause_id: oldCause, comment: oldCmt});
+                deletes.push(baseKey);
+                bypassSpecial = true;
+            }
+            else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
+                var exAmAst = false, exPmAst = false;
+                if(existing.am) {
+                    var cObj1 = ST.causes.find(function(c){return c.id === existing.am.causeId;});
+                    if(cObj1 && cObj1.label.toUpperCase().indexOf('ASTREINTE') > -1) exAmAst = true;
+                }
+                if(existing.pm) {
+                    var cObj2 = ST.causes.find(function(c){return c.id === existing.pm.causeId;});
+                    if(cObj2 && cObj2.label.toUpperCase().indexOf('ASTREINTE') > -1) exPmAst = true;
+                }
+                if (exAmAst && !existing.pm) {
+                    ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
+                    upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
+                    bypassSpecial = true;
+                } else if (exPmAst && !existing.am) {
+                    ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
+                    upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
+                    bypassSpecial = true;
+                }
+            }
+
+            if (!bypassSpecial) {
+                if (targetPeriod === 'full') { if (existing) conflict = true; }
+                else if (targetPeriod === 'am') { if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true; }
+                else if (targetPeriod === 'pm') { if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true; }
+
+                if (conflict) {
+                    conflicts++;
+                    continue; 
+                }
+
+                if (targetPeriod === 'full') {
+                    ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
+                    upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
+                    deletes.push(baseKey+'-am', baseKey+'-pm');
+                } else if (targetPeriod === 'am') {
+                    if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
+                    ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
+                    upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
+                    if(existing && existing.pm) deletes.push(baseKey);
+                } else if (targetPeriod === 'pm') {
+                    if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
+                    ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
+                    upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
+                    if(existing && existing.am) deletes.push(baseKey);
+                }
+            }
+        }
+        
+        // Update direct visual (for speed)
+        var ec = document.querySelector('.ec[data-key="'+baseKey+'"]');
+        if(ec) updateCellVisual(ec, baseKey, ST.year, mo, day);
+    }
+    
+    if(conflicts > 0) showToast(conflicts + " case(s) ignorée(s) car déjà remplie(s).", true);
+    if(upserts.length > 0 || deletes.length > 0) {
+        saveEvsDB(upserts, deletes);
+    }
+}
+
+// Global Drag Events
+document.addEventListener("mousedown", function(e) {
+    if (e.button !== 0 || !ST.selectedCauseId) return; // Seulement clic gauche avec un motif sélectionné
+    var ec = e.target.closest('.ec[data-pid]');
+    if (ec) {
+        e.preventDefault(); // Stop text selection
+        var pid = parseInt(ec.getAttribute("data-pid"));
+        var day = parseInt(ec.getAttribute("data-day"));
+        var mo = parseInt(ec.getAttribute("data-month"));
+        if(pid && day) {
+            ST.drag.active = true;
+            ST.drag.pid = pid;
+            ST.drag.startDt = new Date(ST.year, mo, day).getTime();
+            ST.drag.endDt = ST.drag.startDt;
+            updateDragHighlight();
+        }
+    }
+});
+
+document.addEventListener("mouseover", function(e) {
+    if(!ST.drag.active) return;
+    var ec = e.target.closest('.ec[data-pid]');
+    if (ec) {
+        var pid = parseInt(ec.getAttribute("data-pid"));
+        if(pid === ST.drag.pid) {
+            var day = parseInt(ec.getAttribute("data-day"));
+            var mo = parseInt(ec.getAttribute("data-month"));
+            ST.drag.endDt = new Date(ST.year, mo, day).getTime();
+            updateDragHighlight();
+        }
+    }
+});
+
+document.addEventListener("mouseup", function(e) {
+    if(e.button === 0 && ST.drag.active) {
+        ST.drag.active = false;
+        processDragSelection();
+        updateDragHighlight(); // Efface la surbrillance
+    }
+});
 
 // === RENDU PRINCIPAL & GESTION TOTALE SANS RECHARGEMENT ===
 function renderApp(){
@@ -1573,31 +1738,17 @@ function rTutoModal() {
     var html = '<div class="bm-hdr"><h2>📖 Tutoriel d\'utilisation</h2><button class="bm-x" id="clTuto">&#10005;</button></div>';
     html += '<div class="bm-body" style="padding:24px; font-size:14px; line-height:1.6; color:var(--tx1);">';
     
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-bottom:10px;">1️⃣ Poser une absence complète</h3>';
-    html += '<p>Sélectionnez un motif en haut (ex: <span class="legend-pill" style="background:#3B82F622; color:#3B82F6; padding:4px 10px; font-size:12px; border:1px solid #3B82F6;">CP (2)</span>), puis choisissez <b>Jour</b>. Cliquez (clic gauche) sur une case vide pour la remplir entièrement.</p>';
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-bottom:10px;">1️⃣ Poser une ou plusieurs absences (Saisie Rapide)</h3>';
+    html += '<p>Sélectionnez un motif en haut (ex: <span class="legend-pill" style="background:#3B82F622; color:#3B82F6; padding:4px 10px; font-size:12px; border:1px solid #3B82F6;">CP (2)</span>), puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>.</p>';
+    html += '<ul style="margin-left:20px; margin-top:8px; margin-bottom:8px;">';
+    html += '<li>🖱️ <b>Pour un seul jour :</b> Cliquez simplement sur la case (clic gauche).</li>';
+    html += '<li>🖱️ <b style="color:var(--primary);">Saisie multiple :</b> Cliquez sur une date de début, <b>maintenez le clic enfoncé</b>, glissez la souris jusqu\'à la date de fin, puis relâchez pour remplir plusieurs jours d\'un coup !</li>';
+    html += '</ul>';
     html += '<p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Le clic gauche ne fonctionne QUE si un motif est sélectionné en haut. Sinon, il ne se passe rien !</p>';
 
     html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">2️⃣ Les Demi-Journées (Matin / Après-midi)</h3>';
     html += '<p>Vous pouvez très facilement poser une demi-journée, ou même combiner deux motifs différents sur une même journée ! Pour cela, utilisez les boutons <b>Matin</b> et <b>Aprem</b> de la barre supérieure.</p>';
     html += '<div style="display:flex; align-items:center; gap:12px; margin-top:8px; background:var(--bg2); padding:12px; border-radius:8px;">';
-    html += '  <div style="flex:1;">';
-    html += '    <ol style="margin-left:20px; margin-bottom:0;">';
-    html += '      <li>Sélectionnez <span style="color:#E24B4A; font-weight:bold;">JRTT</span>, cliquez sur <b>Matin</b>, puis remplissez la case.</li>';
-    html += '      <li>Sélectionnez <span style="color:#3B82F6; font-weight:bold;">CP</span>, cliquez sur <b>Aprem</b>, puis cliquez sur la <b>même case</b> !</li>';
-    html += '    </ol>';
-    html += '  </div>';
-    html += '  <div style="text-align:center; padding-left:16px; border-left:2px dashed var(--bd2);">';
-    html += '    <div style="font-size:11px; color:var(--tx2); margin-bottom:4px;">Résultat (Diagonale)</div>';
-    html += '    <div style="width:40px; height:40px; background:linear-gradient(to bottom right, #E24B4A 50%, #3B82F6 50%); border-radius:4px; box-shadow:0 2px 4px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:bold; letter-spacing:-0.5px; margin:0 auto;">1/2</div>';
-    html += '  </div>';
-    html += '</div>';
-
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">3️⃣ Effacer avec la Gomme</h3>';
-    html += '<p>Cliquez sur le bouton <span class="legend-pill" style="background:#fce7f3; color:#db2777; padding:4px 10px; font-size:12px; border:1px solid #db2777;">🧽 Gomme</span> dans la barre du haut. Cliquez ensuite sur la case à effacer. <b>La gomme efface désormais la case complète (matin et après-midi), quoi qu\'il arrive !</b></p>';
-
-    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:20px; margin-bottom:10px;">4️⃣ Clic Droit = Détails & Commentaires</h3>';
-    html += '<p>Faites un <b>Clic Droit</b> sur n\'importe quelle case du planning pour ouvrir la fenêtre de détails. Vous pourrez forcer les motifs et taper une raison explicative.</p>';
-    
     html += '<div style="background:var(--bg1); border:1px solid var(--bd2); border-radius:12px; padding:16px; margin-top:12px; box-shadow:0 8px 20px rgba(0,0,0,0.1); width:100%; max-width:400px; position:relative;">';
     html += '  <h4 style="margin-bottom:12px; font-size:15px;">DUPONT Jean <span style="font-size:11px; font-weight:normal; color:var(--tx2); float:right;">Jeu 15 Janvier 2026</span></h4>';
     html += '  <div style="display:flex; gap:12px; margin-bottom:12px;">';
@@ -1614,6 +1765,9 @@ function rTutoModal() {
     html += '  <div style="text-align:right;"><span style="background:var(--primary); color:white; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display:inline-block;">Enregistrer</span></div>';
     html += '  <div style="position:absolute; bottom:-10px; right:30px; font-size:24px; transform:rotate(-15deg); filter:drop-shadow(2px 4px 2px rgba(0,0,0,0.3));">🖱️</div>';
     html += '</div>';
+
+    html += '<h3 style="color:var(--primary); font-size:17px; margin-top:24px; margin-bottom:10px;">5️⃣ Vue "Calendrier Personnel"</h3>';
+    html += '<p>L\'onglet <b>Calendrier personnel</b> vous permet de voir l\'année entière d\'un collaborateur d\'un seul coup d\'œil. Pour l\'afficher rapidement : commencez par sélectionner le <b>Service</b> concerné dans le premier menu déroulant, puis choisissez le <b>Nom</b> de la personne dans le second. Vous pourrez y saisir ses absences avec les mêmes outils que sur le planning global !</p>';
 
     html += '<div style="text-align:right; margin-top:24px;"><button class="btn p" id="btnGotIt">J\'ai compris !</button></div>';
 
@@ -1953,7 +2107,7 @@ function rPersonnel(){
     tr.appendChild(td4);
 
     var td5=document.createElement('td');
-    var eb=document.createElement('button');eb.className='eb';eb.setAttribute('data-ep',p.id);eb.textContent='Modifier';
+    var eb=document.createElement('button');eb.className='eb edit-pers';eb.setAttribute('data-ep',p.id);eb.textContent='Modifier';
     td5.appendChild(eb);tr.appendChild(td5);
     tb.appendChild(tr);
   }
@@ -1976,11 +2130,10 @@ function rParametres(){
     var c=ST.causes[i];
     tblC.innerHTML += '<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">'
         + '<div style="display:flex; align-items:center; gap:10px;"><div class="cdot" style="background:'+c.color+'"></div><span style="font-weight:600;">'+c.label+' <span style="color:var(--tx3); font-size:11px;">('+c.short+')</span></span></div>'
-        + '<div><button class="eb" data-ec="'+c.id+'" style="padding:4px 8px; font-size:11px;">Modifier</button></div>'
+        + '<div><button class="eb edit-cause" data-ec="'+c.id+'" style="padding:4px 8px; font-size:11px;">Modifier</button></div>'
         + '</div>';
   }
   c1.appendChild(tblC);
-  c1.innerHTML+='<p style="font-size:11px; color:var(--tx2); margin-top:12px; line-height:1.4;"><i>Créez autant de causes que vous souhaitez pour le planning.</i></p>';
   pg.appendChild(c1);
   
   // -- SERVICES --
@@ -2034,18 +2187,19 @@ function rParametres(){
   div.appendChild(pg);return div;
 }
 
-// === DELEGATION D'EVENEMENTS GLOBAUX (Ultra-Robuste) ===
+
+// === GESTION DES EVENEMENTS GLOBAUX DU DOCUMENT ===
 document.addEventListener("click", function(e) {
     // --- PERSONNEL ---
     if (e.target.closest('#addP')) { ST.eModal = {}; renderModals(); return; }
     
-    var btnEp = e.target.closest('.eb[data-ep]');
+    var btnEp = e.target.closest('.edit-pers');
     if (btnEp) { ST.eModal = { pid: String(btnEp.getAttribute("data-ep")) }; renderModals(); return; }
 
     // --- PARAMETRES : CAUSES ---
     if (e.target.closest('#addC')) { ST.pModal = {}; renderModals(); return; }
     
-    var btnEc = e.target.closest('.eb[data-ec]');
+    var btnEc = e.target.closest('.edit-cause');
     if (btnEc) {
         var id = parseInt(btnEc.getAttribute("data-ec"));
         for(var j=0; j<ST.causes.length; j++){
@@ -2086,6 +2240,63 @@ document.addEventListener("click", function(e) {
 });
 
 
+// === GESTION DU DRAG & DROP (SAISIE RAPIDE MULTIPLE) ===
+document.addEventListener("mousedown", function(e) {
+    if (e.button !== 0 || !ST.selectedCauseId) return; 
+    var ec = e.target.closest('.ec[data-pid]');
+    if (ec) {
+        e.preventDefault(); 
+        var pid = parseInt(ec.getAttribute("data-pid"));
+        var day = parseInt(ec.getAttribute("data-day"));
+        var mo = parseInt(ec.getAttribute("data-month"));
+        if(pid && day) {
+            ST.drag.active = true;
+            ST.drag.pid = pid;
+            ST.drag.startDt = new Date(ST.year, mo, day).getTime();
+            ST.drag.endDt = ST.drag.startDt;
+            updateDragHighlight();
+        }
+    }
+});
+
+document.addEventListener("mouseover", function(e) {
+    if(!ST.drag.active) return;
+    var ec = e.target.closest('.ec[data-pid]');
+    if (ec) {
+        var pid = parseInt(ec.getAttribute("data-pid"));
+        if(pid === ST.drag.pid) {
+            var day = parseInt(ec.getAttribute("data-day"));
+            var mo = parseInt(ec.getAttribute("data-month"));
+            ST.drag.endDt = new Date(ST.year, mo, day).getTime();
+            updateDragHighlight();
+        }
+    }
+});
+
+document.addEventListener("mouseup", function(e) {
+    if(e.button === 0 && ST.drag.active) {
+        ST.drag.active = false;
+        processDragSelection();
+        updateDragHighlight(); 
+    }
+});
+
+document.addEventListener("contextmenu", function(e) {
+    var ec = e.target.closest('.ec[data-pid]');
+    if(ec) {
+        e.preventDefault();
+        var pid = parseInt(ec.getAttribute("data-pid"));
+        var day = parseInt(ec.getAttribute("data-day"));
+        var mo = parseInt(ec.getAttribute("data-month"));
+        var key = ec.getAttribute("data-key");
+        if(pid && day) {
+            ST.modal = {pid:pid, day:day, month:mo, key:key};
+            renderModals();
+        }
+    }
+});
+
+
 // === EVENEMENTS APP PRINCIPALE ===
 function bindAppEvents(){
   var navTabs=document.querySelectorAll(".nav-tab");
@@ -2111,7 +2322,6 @@ function bindAppEvents(){
   if(pY)pY.addEventListener("click",function(){ST.year--;renderApp();});
   if(nY)nY.addEventListener("click",function(){ST.year++;renderApp();});
   
-  // -- Code Admin --
   var adminCode = document.getElementById("adminCode");
   if(adminCode) {
       adminCode.addEventListener("input", function(e) {
@@ -2130,7 +2340,6 @@ function bindAppEvents(){
       });
   }
 
-  // ScrollSpy et Navigation Mois (Uniquement vue planning global)
   var mbs=document.querySelectorAll(".month-btn");
   for(var i=0;i<mbs.length;i++){(function(b){
       b.addEventListener("click",function(e){
@@ -2177,7 +2386,6 @@ function bindAppEvents(){
       });
   }
 
-  // Filtres calendrier personnel
   var calSvc=document.getElementById("calSvc"), calPid=document.getElementById("calPid");
   if(calSvc) calSvc.addEventListener("change",function(){ 
       ST.calSvc = calSvc.value; 
@@ -2241,126 +2449,6 @@ function bindAppEvents(){
          e.currentTarget.classList.add("active");
      });
   }
-
-  // CLICS SUR LA GRILLE (Saisie Rapide Uniquement)
-  var ecs=document.querySelectorAll(".ec[data-pid]");
-  for(var i=0;i<ecs.length;i++){(function(ec){
-    ec.addEventListener("click",function(e){
-      var pid=parseInt(ec.getAttribute("data-pid"));
-      var day=parseInt(ec.getAttribute("data-day"));
-      var mo=parseInt(ec.getAttribute("data-month"));
-      var baseKey=ec.getAttribute("data-key");
-      
-      // LE CLIC GAUCHE NE FAIT QUELQUE CHOSE QUE SI UN OUTIL EST SELECTIONNÉ
-      if(pid && day && ST.selectedCauseId) {
-             var existing = ST.events[baseKey];
-             var upserts = [];
-             var deletes = [];
-
-             if (ST.selectedCauseId === 'erase') {
-                 // GOMME ABSOLUE : Efface tout !
-                 if (existing) {
-                     delete ST.events[baseKey];
-                     deletes.push(baseKey, baseKey+'-am', baseKey+'-pm');
-                 }
-             } else {
-                 var targetPeriod = ST.selectedPeriod;
-                 
-                 // LOGIQUE ASTREINTE : Force sur "Matin" (am) pour libérer le bas
-                 var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
-                 var isAstreinte = false;
-                 if(causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1) {
-                     isAstreinte = true;
-                     targetPeriod = 'am'; // FORCE TOUJOURS L'ASTREINTE EN HAUT
-                 }
-                 
-                 // --- NOUVELLE LOGIQUE TOLÉRANCE ASTREINTE ---
-                 var conflict = false;
-                 var bypassSpecial = false;
-
-                 // Cas 1 : On ajoute Astreinte sur une case Pleine (full) existante
-                 if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
-                     var oldCause = existing.causeId;
-                     var oldCmt = existing.comment;
-                     ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
-                     upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                     upserts.push({id: baseKey+'-pm', cause_id: oldCause, comment: oldCmt});
-                     deletes.push(baseKey);
-                     bypassSpecial = true;
-                 }
-                 // Cas 2 : On ajoute un motif Plein (full) sur une demi-case existante avec Astreinte en haut
-                 else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
-                     var exAmAst = false, exPmAst = false;
-                     if(existing.am) {
-                         var cObj1 = ST.causes.find(function(c){return c.id === existing.am.causeId;});
-                         if(cObj1 && cObj1.label.toUpperCase().indexOf('ASTREINTE') > -1) exAmAst = true;
-                     }
-                     if(existing.pm) {
-                         var cObj2 = ST.causes.find(function(c){return c.id === existing.pm.causeId;});
-                         if(cObj2 && cObj2.label.toUpperCase().indexOf('ASTREINTE') > -1) exPmAst = true;
-                     }
-                     
-                     if (exAmAst && !existing.pm) {
-                         ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
-                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                         bypassSpecial = true;
-                     } else if (exPmAst && !existing.am) {
-                         ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
-                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                         bypassSpecial = true;
-                     }
-                 }
-
-                 if (!bypassSpecial) {
-                     // SAISIE NORMALE (Avec blocage anti-écrasement)
-                     if (targetPeriod === 'full') {
-                         if (existing) conflict = true;
-                     } else if (targetPeriod === 'am') {
-                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
-                     } else if (targetPeriod === 'pm') {
-                         if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
-                     }
-
-                     if (conflict) {
-                         showToast("Case déjà remplie ! Utilisez la gomme 🧽 pour effacer d'abord.", true);
-                         return; 
-                     }
-
-                     if (targetPeriod === 'full') {
-                         ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
-                         upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
-                         deletes.push(baseKey+'-am', baseKey+'-pm');
-                     } else if (targetPeriod === 'am') {
-                         if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
-                         ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
-                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                         if(existing && existing.pm) deletes.push(baseKey);
-                     } else if (targetPeriod === 'pm') {
-                         if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
-                         ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
-                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                         if(existing && existing.am) deletes.push(baseKey);
-                     }
-                 }
-             }
-             
-             updateCellVisual(ec, baseKey, ST.year, mo, day);
-             if(upserts.length > 0 || deletes.length > 0) {
-                 saveEvsDB(upserts, deletes);
-             }
-      }
-    });
-    
-    // CLIC DROIT = FORCER MODALE DE DETAILS SANS RECHARGER LE TABLEAU
-    ec.addEventListener("contextmenu", function(e) {
-        e.preventDefault();
-        var pid=parseInt(ec.getAttribute("data-pid"));
-        var day=parseInt(ec.getAttribute("data-day"));
-        var mo=parseInt(ec.getAttribute("data-month"));
-        var key=ec.getAttribute("data-key");
-        if(pid&&day){ST.modal={pid:pid,day:day,month:mo,key:key};renderModals();}
-    });
-  })(ecs[i]);}
 
   // EXPORT EXCEL GLOBAL
   var btnExportGlobalXlsx = document.getElementById("btnExportGlobalXlsx");
