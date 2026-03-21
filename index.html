@@ -1192,21 +1192,32 @@ function rCalendrier() {
 
 function rTutoModal() {
     var ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'tutoOv';
-    ov.innerHTML = `<div class="bm"><div class="bm-hdr"><h2>📖 Tutoriel d'utilisation</h2><button class="bm-x" id="clTuto">&#10005;</button></div><div class="bm-body" style="padding:32px; font-size:15px; line-height:1.7; color:var(--tx1); overflow-y:auto;"><h3 style="color:var(--primary); font-size:18px; margin-bottom:10px;">1️⃣ Poser une ou plusieurs absences (Saisie Rapide)</h3><p>Sélectionnez un motif en haut, puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>.</p><ul style="margin-left:20px; margin-top:8px; margin-bottom:8px;"><li>🖱️ <b>Pour un seul jour :</b> Cliquez simplement sur la case (clic gauche).</li><li>🖱️ <b style="color:var(--primary);">Saisie multiple :</b> Cliquez sur une date de début, <b>maintenez le clic enfoncé</b>, glissez la souris jusqu'à la date de fin, puis relâchez pour remplir plusieurs jours d'un coup !</li></ul><p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Le clic gauche ne fonctionne QUE si un motif est sélectionné en haut.</p><h3 style="color:var(--primary); font-size:18px; margin-top:20px; margin-bottom:10px;">2️⃣ Les Demi-Journées (Matin / Après-midi)</h3><p>Vous pouvez très facilement poser une demi-journée, ou combiner deux motifs ! Utilisez les boutons <b>Matin</b> et <b>Aprem</b> de la barre supérieure.</p><h3 style="color:var(--primary); font-size:18px; margin-top:20px; margin-bottom:10px;">3️⃣ Effacer avec la Gomme</h3><p>Cliquez sur le bouton 🧽 Gomme. Cliquez ensuite (ou glissez) sur les cases à effacer. (La gomme efface toute la case, quoiqu'il arrive !)</p><h3 style="color:var(--primary); font-size:18px; margin-top:20px; margin-bottom:10px;">4️⃣ Clic Droit = Détails & Commentaires</h3><p>Faites un <b>Clic Droit</b> sur n'importe quelle case du planning pour ouvrir la fenêtre de détails.</p><h3 style="color:var(--primary); font-size:18px; margin-top:24px; margin-bottom:10px;">5️⃣ Vue "Calendrier Personnel"</h3><p>L'onglet <b>Calendrier personnel</b> permet de voir l'année d'un collaborateur. Sélectionnez son Service, puis son Nom. Vous pourrez saisir avec les mêmes outils !</p><div style="text-align:right; margin-top:24px;"><button class="btn p" id="btnGotIt" style="padding:12px 24px; font-size:16px;">J'ai compris !</button></div></div></div>`;
+    ov.innerHTML = `<div class="bm" style="max-width:1000px; width:95%;"><div class="bm-hdr"><h2>📖 Tutoriel d'utilisation</h2><button class="bm-x" id="clTuto">&#10005;</button></div><div class="bm-body" style="padding:32px; font-size:16px; line-height:1.7; color:var(--tx1); overflow-y:auto;"><h3 style="color:var(--primary); font-size:19px; margin-bottom:10px;">1️⃣ Poser une ou plusieurs absences (Saisie Rapide)</h3><p>Sélectionnez un motif en haut, puis choisissez <b>Jour</b>, <b>Matin</b> ou <b>Aprem</b>.</p><ul style="margin-left:20px; margin-top:8px; margin-bottom:8px;"><li>🖱️ <b>Pour un seul jour :</b> Cliquez simplement sur la case (clic gauche).</li><li>🖱️ <b style="color:var(--primary);">Saisie multiple :</b> Cliquez sur une date de début, <b>maintenez le clic enfoncé</b>, glissez la souris jusqu'à la date de fin, puis relâchez pour remplir plusieurs jours d'un coup !</li></ul><p style="color:#E24B4A; font-weight:600; margin-top:8px;">⚠️ Le clic gauche ne fonctionne QUE si un motif est sélectionné en haut.</p><h3 style="color:var(--primary); font-size:19px; margin-top:20px; margin-bottom:10px;">2️⃣ Les Demi-Journées (Matin / Après-midi)</h3><p>Vous pouvez très facilement poser une demi-journée, ou combiner deux motifs ! Utilisez les boutons <b>Matin</b> et <b>Aprem</b> de la barre supérieure.</p><h3 style="color:var(--primary); font-size:19px; margin-top:20px; margin-bottom:10px;">3️⃣ Effacer avec la Gomme</h3><p>Cliquez sur le bouton 🧽 Gomme. Cliquez ensuite (ou glissez) sur les cases à effacer. (La gomme efface toute la case, quoiqu'il arrive !)</p><h3 style="color:var(--primary); font-size:19px; margin-top:20px; margin-bottom:10px;">4️⃣ Clic Droit = Détails & Commentaires</h3><p>Faites un <b>Clic Droit</b> sur n'importe quelle case du planning pour ouvrir la fenêtre de détails.</p><h3 style="color:var(--primary); font-size:19px; margin-top:24px; margin-bottom:10px;">5️⃣ Vue "Calendrier Personnel"</h3><p>L'onglet <b>Calendrier personnel</b> permet de voir l'année d'un collaborateur. Sélectionnez son Service, puis son Nom. Vous pourrez saisir avec les mêmes outils !</p><div style="text-align:right; margin-top:24px;"><button class="btn p" id="btnGotIt" style="padding:12px 24px; font-size:16px;">J'ai compris !</button></div></div></div>`;
     return ov;
 }
 
 function rModal(){
   var m2=ST.modal, ov=document.createElement('div'); ov.className='ov'; ov.id='mOv';
   var p=ST.personnels.find(x=>String(x.id)===String(m2.pid)), ev=ST.events[m2.key], dw=dow(ST.year,m2.month,m2.day), wk=isoWk(ST.year,m2.month,m2.day);
-  var fe=isFe(ST.year,m2.month,m2.day), va=isVa(ST.year,m2.month,m2.day), we=isWe(ST.year,m2.month,m2.day), amC='', amCm='', pmC='', pmCm='';
-  if(ev){if(ev.type==='full'){amC=ev.causeId; pmC=ev.causeId; amCm=ev.comment; pmCm=ev.comment;}else if(ev.type==='half'){if(ev.am){amC=ev.am.causeId; amCm=ev.am.comment;}if(ev.pm){pmC=ev.pm.causeId; pmCm=ev.pm.comment;}}}
-  if(amCm==="Import Excel")amCm=""; if(pmCm==="Import Excel")pmCm="";
-  var badge=fe?' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>':va?' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances</span>':we?' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>':'';
-  var o='<option value="">&mdash; Présent / Aucune &mdash;</option>'; ST.causes.forEach(c=>o+='<option value="'+c.id+'"'+(amC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>');
-  var o2='<option value="">&mdash; Présent / Aucune &mdash;</option>'; ST.causes.forEach(c=>o2+='<option value="'+c.id+'"'+(pmC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>');
+  var fe=isFe(ST.year,m2.month,m2.day), va=isVa(ST.year,m2.month,m2.day), we=isWe(ST.year,m2.month,m2.day), fullC='', fullCm='';
   
-  ov.innerHTML=`<div class="modal"><h3>${p?p.nom:''}</h3><div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">${DL[dw]} ${m2.day} ${MO[m2.month]} ${ST.year} <span style="margin:0 8px">&mdash;</span> S${p2(wk)}${badge}</div><div class="half-day-split"><div style="flex:1"><label>☀️ Matin</label><select id="mC_am" style="margin-bottom:8px;">${o}</select><input id="mCm_am" value="${amCm}" placeholder="Commentaire..."/></div><div style="flex:1"><label>🌙 Après-midi</label><select id="mC_pm" style="margin-bottom:8px;">${o2}</select><input id="mCm_pm" value="${pmCm}" placeholder="Commentaire..."/></div></div><div class="mbtns">${ev?'<button class="btn d" id="dEv">Vider la case</button>':''}<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div></div>`;
+  if(ev){
+      if(ev.type==='full'){
+          fullC=ev.causeId; 
+          fullCm=ev.comment;
+      }else if(ev.type==='half'){
+          // Si c'est une demi-journée, on récupère le motif du matin (ou de l'aprem) par défaut
+          if(ev.am){fullC=ev.am.causeId; fullCm=ev.am.comment;}
+          else if(ev.pm){fullC=ev.pm.causeId; fullCm=ev.pm.comment;}
+      }
+  }
+  if(fullCm==="Import Excel")fullCm=""; 
+  
+  var badge=fe?' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>':va?' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances</span>':we?' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>':'';
+  var o='<option value="">&mdash; Présent / Aucune &mdash;</option>'; 
+  ST.causes.forEach(c=>o+='<option value="'+c.id+'"'+(fullC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>');
+  
+  ov.innerHTML=`<div class="modal"><h3>${p?p.nom:''}</h3><div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">${DL[dw]} ${m2.day} ${MO[m2.month]} ${ST.year} <span style="margin:0 8px">&mdash;</span> S${p2(wk)}${badge}</div><div class="mr"><label>Motif de l'absence (Journée entière)</label><select id="mC_full" style="margin-bottom:8px;">${o}</select></div><div class="mr"><label>Commentaire</label><input id="mCm_full" value="${fullCm}" placeholder="Saisir un commentaire..."/></div><div class="mbtns">${ev?'<button class="btn d" id="dEv">Vider la case</button>':''}<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div></div>`;
   return ov;
 }
 
@@ -1358,7 +1369,6 @@ function bindAppEvents(){
   document.querySelectorAll(".nav-tab").forEach(t=>t.addEventListener("click", e=>{ 
       if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn")return; 
       
-      // SAUVEGARDE DU SCROLL AVANT CHANGEMENT D'ONGLET
       if(ST.tab === 'planning') { var gc = document.querySelector(".gc"); if(gc) { ST.scrollPlanX = gc.scrollLeft; ST.scrollPlanY = gc.scrollTop; } }
       else if (ST.tab === 'calendrier') { var cw = document.querySelector(".cal-wrapper"); if(cw) { ST.scrollCalX = cw.scrollLeft; ST.scrollCalY = cw.scrollTop; } }
       
@@ -1447,12 +1457,18 @@ function bindModalEvents() {
   if(cMod)cMod.addEventListener("click", ()=>{ST.modal=null;renderApp();});
   if(dEvBtn)dEvBtn.addEventListener("click", ()=>{ var k=ST.modal.key; delete ST.events[k]; ST.modal=null; renderApp(); saveEvsDB([], [k, k+'-am', k+'-pm']).then(()=>showToast("Absence supprimée")); });
   if(sMod)sMod.addEventListener("click", ()=>{
-    var cAm=parseInt(document.getElementById("mC_am").value)||null, cmAm=document.getElementById("mCm_am").value.trim(), cPm=parseInt(document.getElementById("mC_pm").value)||null, cmPm=document.getElementById("mCm_pm").value.trim(), k=ST.modal.key;
-    if(cPm){ var cPmO=ST.causes.find(c=>c.id===cPm); if(cPmO&&cPmO.label.toUpperCase().indexOf('ASTREINTE')>-1){ var tc=cAm, tcm=cmAm; cAm=cPm; cmAm=cmPm; cPm=tc; cmPm=tcm; } }
+    var cid_full=parseInt(document.getElementById("mC_full").value)||null, cm_full=document.getElementById("mCm_full").value.trim(), k=ST.modal.key;
     var up=[], del=[];
-    if(cAm&&cPm&&cAm===cPm&&cmAm===cmPm){ ST.events[k]={type:'full',causeId:cAm,comment:cmAm}; up.push({id:k,cause_id:cAm,comment:cmAm}); del.push(k+'-am',k+'-pm'); }
-    else if(cAm||cPm){ ST.events[k]={type:'half',am:null,pm:null}; del.push(k); if(cAm){ST.events[k].am={causeId:cAm,comment:cmAm};up.push({id:k+'-am',cause_id:cAm,comment:cmAm});}else{del.push(k+'-am');} if(cPm){ST.events[k].pm={causeId:cPm,comment:cmPm};up.push({id:k+'-pm',cause_id:cPm,comment:cmPm});}else{del.push(k+'-pm');} }
-    else{ delete ST.events[k]; del.push(k,k+'-am',k+'-pm'); }
+    
+    if(cid_full){ 
+        ST.events[k]={type:'full',causeId:cid_full,comment:cm_full}; 
+        up.push({id:k,cause_id:cid_full,comment:cm_full}); 
+        del.push(k+'-am',k+'-pm'); // On s'assure d'écraser les éventuelles demi-journées
+    } else { 
+        delete ST.events[k]; 
+        del.push(k,k+'-am',k+'-pm'); 
+    }
+    
     ST.modal=null; renderApp(); saveEvsDB(up, del).then(()=>showToast("Absence enregistrée"));
   });
   
