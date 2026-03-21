@@ -471,7 +471,7 @@ var ST={
 // --- RÉCUPÉRATION DYNAMIQUE DES VACANCES (API GOUVERNEMENT) ---
 async function fetchVacancesAPI() {
     try {
-        const url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?where=zones%3D%22Zone%20C%22%20and%20population%3D%22%C3%89l%C3%A8ves%22%20and%20start_date%20%3E%3D%20%222025-01-01%22&limit=100';
+        const url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?where=zones%20like%20%22%25Zone%20C%25%22%20and%20population%3D%22%C3%89l%C3%A8ves%22%20and%20start_date%20%3E%3D%20%222025-01-01%22&order_by=start_date%20ASC&limit=100';
         const response = await fetch(url);
         if (!response.ok) return;
         const data = await response.json();
@@ -479,12 +479,12 @@ async function fetchVacancesAPI() {
             var newVacances = [];
             data.results.forEach(function(r) {
                 if (r.start_date && r.end_date) {
-                    var sDate = new Date(r.start_date.substring(0, 10));
-                    var eDate = new Date(r.end_date.substring(0, 10));
+                    var sDate = new Date(r.start_date);
+                    var eDate = new Date(r.end_date);
                     eDate.setDate(eDate.getDate() - 1); 
                     var sStr = sDate.getFullYear() + "-" + p2(sDate.getMonth()+1) + "-" + p2(sDate.getDate());
                     var eStr = eDate.getFullYear() + "-" + p2(eDate.getMonth()+1) + "-" + p2(eDate.getDate());
-                    newVacances.push([sStr, eStr]);
+                    if (sStr >= "2025-01-01") newVacances.push([sStr, eStr]);
                 }
             });
             if (newVacances.length > 0) {
