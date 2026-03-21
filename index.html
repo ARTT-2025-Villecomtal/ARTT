@@ -151,6 +151,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .mr select:focus,.mr textarea:focus,.mr input:focus{outline:none;border-color:var(--primary)}
 .mr textarea{resize:vertical;min-height:80px}
 .mbtns{display:flex;gap:10px;justify-content:flex-end;margin-top:24px}
+.half-day-split { display:flex; gap:16px; margin-bottom:8px; }
 .btn{padding:10px 18px;border-radius:var(--r1);cursor:pointer;font-size:14px;font-weight:600;border:1px solid var(--bd1);background:var(--bg1);color:var(--tx1);transition:all 0.2s}
 .btn.p{background:var(--primary);color:white;border-color:var(--primary)}
 .btn.d{background:#E24B4A;color:white;border-color:#E24B4A;margin-right:auto}
@@ -385,7 +386,18 @@ function getNameColWidth() { var stub = document.querySelector('.stub-w'); retur
 // --- DONNEES PAR DEFAUT ---
 var CD=[{id:1,label:"JRTT",color:"#E24B4A",short:"1"},{id:2,label:"CP",color:"#3B82F6",short:"2"},{id:3,label:"Evènement Familial",color:"#F97316",short:"3"},{id:4,label:"Réunion Extérieure",color:"#10B981",short:"4"},{id:5,label:"Formation Extérieur",color:"#8B5CF6",short:"5"},{id:6,label:"Délégation Extérieur",color:"#6B7280",short:"6"},{id:7,label:"Repos Compensateur",color:"#1D4ED8",short:"7"},{id:8,label:"Télétravail",color:"#14B8A6",short:"8"}];
 var FERIES={"2026-01-01":1,"2026-04-06":1,"2026-05-01":1,"2026-05-08":1,"2026-05-14":1,"2026-05-25":1,"2026-07-14":1,"2026-08-15":1,"2026-11-01":1,"2026-11-11":1,"2026-12-25":1};
-var VACANCES=[["2026-02-07","2026-02-22"],["2026-04-11","2026-04-26"],["2026-07-04","2026-08-31"],["2026-10-17","2026-11-01"],["2026-12-19","2027-01-04"]];
+var VACANCES=[
+  ["2025-10-18","2025-11-02"],
+  ["2025-12-20","2026-01-04"],
+  ["2026-02-21","2026-03-08"],
+  ["2026-04-25","2026-05-10"],
+  ["2026-07-04","2026-08-31"],
+  ["2026-10-17","2026-11-01"],
+  ["2026-12-19","2027-01-03"],
+  ["2027-02-20","2027-03-07"],
+  ["2027-04-24","2027-05-09"],
+  ["2027-07-07","2027-08-31"]
+];
 var XLS={};
 var MO=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 var MS=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Aoû","Sep","Oct","Nov","Déc"];
@@ -459,7 +471,7 @@ var ST={
 // --- RÉCUPÉRATION DYNAMIQUE DES VACANCES (API GOUVERNEMENT) ---
 async function fetchVacancesAPI() {
     try {
-        const url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?where=zones%3D%22Zone%20B%22%20and%20population%3D%22%C3%89l%C3%A8ves%22&limit=100';
+        const url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?where=zones%3D%22Zone%20C%22%20and%20population%3D%22%C3%89l%C3%A8ves%22%20and%20start_date%20%3E%3D%20%222025-01-01%22&limit=100';
         const response = await fetch(url);
         if (!response.ok) return;
         const data = await response.json();
@@ -480,7 +492,7 @@ async function fetchVacancesAPI() {
             }
         }
     } catch(e) {
-        console.warn("API Vacances hors ligne, utilisation du mode secours.");
+        console.warn("API Vacances hors ligne, utilisation du mode secours (Zone C par défaut).");
     }
 }
 
@@ -695,7 +707,7 @@ function updateCellVisual(ec, baseKey, y, mo, d) {
     if(ev){
         applyCellVisuals(ec, ev);
     }else{
-      if(fe)ec.title="Jour férié";else if(va)ec.title="Vacances zone B"; else ec.title="";
+      if(fe)ec.title="Jour férié";else if(va)ec.title="Vacances (Zone C)"; else ec.title="";
     }
 }
 
@@ -752,8 +764,8 @@ function processDragSelection() {
                 var oldCause = existing.causeId;
                 var oldCmt = existing.comment;
                 ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
-                upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                upserts.push({id: baseKey+'-pm', cause_id: oldCause, comment: oldCmt});
+                upserts.push({id: baseKey+'-am', causeId: ST.selectedCauseId, comment: ''});
+                upserts.push({id: baseKey+'-pm', causeId: oldCause, comment: oldCmt});
                 deletes.push(baseKey);
                 bypassSpecial = true;
             }
@@ -1150,7 +1162,7 @@ function buildGrid() {
         for(var d=1; d<=nd; d++){
             var we=isWe(y,mo,d), fe=isFe(y,mo,d), va=isVa(y,mo,d), td=isTd(y,mo,d), mon=(dow(y,mo,d)===1);
             var cls = "dc" + (td?" td":fe?" fe":va?" va":we?" we":"") + (mon||d===1?" ms":"");
-            dh.innerHTML += '<div class="'+cls+'" title="'+(fe?'Jour férié':va?'Vacances zone B':'')+'" '+(d===1?'id="m-start-'+mo+'"':'')+'>'
+            dh.innerHTML += '<div class="'+cls+'" title="'+(fe?'Jour férié':va?'Vacances (Zone C)':'')+'" '+(d===1?'id="m-start-'+mo+'"':'')+'>'
                 + '<div class="dc-n">'+d+'</div><div class="dc-d">'+DS[dow(y,mo,d)]+'</div></div>';
         }
     }
@@ -1174,7 +1186,7 @@ function buildGrid() {
                 ec.className = cls2;
                 if(ev) applyCellVisuals(ec, ev);
                 else if(fe) ec.title = "Jour férié";
-                else if(va) ec.title = "Vacances zone B";
+                else if(va) ec.title = "Vacances (Zone C)";
                 
                 ec.setAttribute("data-pid", p.id);
                 ec.setAttribute("data-day", d);
@@ -1206,7 +1218,7 @@ function rCalendrier() {
                var we=isWe(ST.year,mo,d),fe=isFe(ST.year,mo,d),va=isVa(ST.year,mo,d),td=isTd(ST.year,mo,d),dw=dow(ST.year,mo,d),row=document.createElement("div"); row.className = "cal-row";
                row.innerHTML = `<div class="cal-lbl${(dw===0||dw===6)?" we":""}${fe?" fe":""}${td?" td":""}"><span>${d}</span><span>${DS[dw]}</span></div>`;
                var k = eKey(p.id, ST.year, mo, d), ev = ST.events[k], ec = document.createElement("div"); ec.className = "ec cal-ec" + (td?" td":fe?" fe":va?" va":we?" we":"");
-               if(ev) applyCellVisuals(ec, ev); else if(fe) ec.title="Jour férié"; else if(va) ec.title="Vacances zone B";
+               if(ev) applyCellVisuals(ec, ev); else if(fe) ec.title="Jour férié"; else if(va) ec.title="Vacances (Zone C)";
                ec.setAttribute("data-pid", p.id); ec.setAttribute("data-day", d); ec.setAttribute("data-month", mo); ec.setAttribute("data-key", k); row.appendChild(ec); col.appendChild(row);
            } else { col.innerHTML += '<div class="cal-row empty"></div>'; }
         }
@@ -1239,7 +1251,7 @@ function rModal(){
   }
   if(fullCm==="Import Excel")fullCm=""; 
   
-  var badge=fe?' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>':va?' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances</span>':we?' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>':'';
+  var badge=fe?' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>':va?' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances (Zone C)</span>':we?' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>':'';
   var o='<option value="">&mdash; Présent / Aucune &mdash;</option>'; 
   ST.causes.forEach(c=>o+='<option value="'+c.id+'"'+(fullC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>');
   
@@ -1395,7 +1407,6 @@ function bindAppEvents(){
   document.querySelectorAll(".nav-tab").forEach(t=>t.addEventListener("click", e=>{ 
       if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn")return; 
       
-      // SAUVEGARDE DU SCROLL AVANT CHANGEMENT D'ONGLET
       if(ST.tab === 'planning') { var gc = document.querySelector(".gc"); if(gc) { ST.scrollPlanX = gc.scrollLeft; ST.scrollPlanY = gc.scrollTop; } }
       else if (ST.tab === 'calendrier') { var cw = document.querySelector(".cal-wrapper"); if(cw) { ST.scrollCalX = cw.scrollLeft; ST.scrollCalY = cw.scrollTop; } }
       
@@ -1490,7 +1501,7 @@ function bindModalEvents() {
     if(cid_full){ 
         ST.events[k]={type:'full',causeId:cid_full,comment:cm_full}; 
         up.push({id:k,cause_id:cid_full,comment:cm_full}); 
-        del.push(k+'-am',k+'-pm'); // On s'assure d'écraser les éventuelles demi-journées
+        del.push(k+'-am',k+'-pm');
     } else { 
         delete ST.events[k]; 
         del.push(k,k+'-am',k+'-pm'); 
