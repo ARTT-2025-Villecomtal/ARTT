@@ -468,34 +468,6 @@ var ST={
   ]
 };
 
-// --- RÉCUPÉRATION DYNAMIQUE DES VACANCES (API GOUVERNEMENT) ---
-async function fetchVacancesAPI() {
-    try {
-        const url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?where=zones%20like%20%22%25Zone%20C%25%22%20and%20population%3D%22%C3%89l%C3%A8ves%22%20and%20start_date%20%3E%3D%20%222025-01-01%22&order_by=start_date%20ASC&limit=100';
-        const response = await fetch(url);
-        if (!response.ok) return;
-        const data = await response.json();
-        if (data && data.results && data.results.length > 0) {
-            var newVacances = [];
-            data.results.forEach(function(r) {
-                if (r.start_date && r.end_date) {
-                    var sDate = new Date(r.start_date);
-                    var eDate = new Date(r.end_date);
-                    eDate.setDate(eDate.getDate() - 1); 
-                    var sStr = sDate.getFullYear() + "-" + p2(sDate.getMonth()+1) + "-" + p2(sDate.getDate());
-                    var eStr = eDate.getFullYear() + "-" + p2(eDate.getMonth()+1) + "-" + p2(eDate.getDate());
-                    if (sStr >= "2025-01-01") newVacances.push([sStr, eStr]);
-                }
-            });
-            if (newVacances.length > 0) {
-                VACANCES = newVacances;
-            }
-        }
-    } catch(e) {
-        console.warn("API Vacances hors ligne, utilisation du mode secours (Zone C par défaut).");
-    }
-}
-
 // --- Helpers de dates ---
 function p2(n){return String(n).padStart(2,"0");}
 function dStr(y,m,d){return y+"-"+p2(m+1)+"-"+p2(d);}
@@ -1407,6 +1379,7 @@ function bindAppEvents(){
   document.querySelectorAll(".nav-tab").forEach(t=>t.addEventListener("click", e=>{ 
       if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn")return; 
       
+      // SAUVEGARDE DU SCROLL AVANT CHANGEMENT D'ONGLET
       if(ST.tab === 'planning') { var gc = document.querySelector(".gc"); if(gc) { ST.scrollPlanX = gc.scrollLeft; ST.scrollPlanY = gc.scrollTop; } }
       else if (ST.tab === 'calendrier') { var cw = document.querySelector(".cal-wrapper"); if(cw) { ST.scrollCalX = cw.scrollLeft; ST.scrollCalY = cw.scrollTop; } }
       
@@ -1558,8 +1531,7 @@ function bindModalEvents() {
 
 // === DEMARRAGE ===
 if(checkGasUrl()) {
-    Promise.all([loadDB(), fetchVacancesAPI()]).then(function(results){
-      var res = results[0];
+    loadDB().then(function(res){
       if(res){ ST.events=Object.assign({},XLS,res.events); if(res.personnels&&res.personnels.length>0)ST.personnels=res.personnels; if(res.causes&&res.causes.length>0)ST.causes=res.causes; if(res.services&&res.services.length>0)ST.services=res.services; if(res.groupes&&res.groupes.length>0)ST.groupes=res.groupes; }
       ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Planning synchronisé");
     }).catch(function(e){
