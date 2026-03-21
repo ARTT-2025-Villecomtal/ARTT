@@ -151,7 +151,6 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .mr select:focus,.mr textarea:focus,.mr input:focus{outline:none;border-color:var(--primary)}
 .mr textarea{resize:vertical;min-height:80px}
 .mbtns{display:flex;gap:10px;justify-content:flex-end;margin-top:24px}
-.half-day-split { display:flex; gap:16px; margin-bottom:8px; }
 .btn{padding:10px 18px;border-radius:var(--r1);cursor:pointer;font-size:14px;font-weight:600;border:1px solid var(--bd1);background:var(--bg1);color:var(--tx1);transition:all 0.2s}
 .btn.p{background:var(--primary);color:white;border-color:var(--primary)}
 .btn.d{background:#E24B4A;color:white;border-color:#E24B4A;margin-right:auto}
@@ -456,6 +455,34 @@ var ST={
     {id:55,nom:"WETISCHEK Franck",service:"Production",groupe:"CODU"}
   ]
 };
+
+// --- RÉCUPÉRATION DYNAMIQUE DES VACANCES (API GOUVERNEMENT) ---
+async function fetchVacancesAPI() {
+    try {
+        const url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?where=zones%3D%22Zone%20B%22%20and%20population%3D%22%C3%89l%C3%A8ves%22&limit=100';
+        const response = await fetch(url);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data && data.results && data.results.length > 0) {
+            var newVacances = [];
+            data.results.forEach(function(r) {
+                if (r.start_date && r.end_date) {
+                    var sDate = new Date(r.start_date.substring(0, 10));
+                    var eDate = new Date(r.end_date.substring(0, 10));
+                    eDate.setDate(eDate.getDate() - 1); 
+                    var sStr = sDate.getFullYear() + "-" + p2(sDate.getMonth()+1) + "-" + p2(sDate.getDate());
+                    var eStr = eDate.getFullYear() + "-" + p2(eDate.getMonth()+1) + "-" + p2(eDate.getDate());
+                    newVacances.push([sStr, eStr]);
+                }
+            });
+            if (newVacances.length > 0) {
+                VACANCES = newVacances;
+            }
+        }
+    } catch(e) {
+        console.warn("API Vacances hors ligne, utilisation du mode secours.");
+    }
+}
 
 // --- Helpers de dates ---
 function p2(n){return String(n).padStart(2,"0");}
@@ -1206,7 +1233,6 @@ function rModal(){
           fullC=ev.causeId; 
           fullCm=ev.comment;
       }else if(ev.type==='half'){
-          // Si c'est une demi-journée, on récupère le motif du matin (ou de l'aprem) par défaut
           if(ev.am){fullC=ev.am.causeId; fullCm=ev.am.comment;}
           else if(ev.pm){fullC=ev.pm.causeId; fullCm=ev.pm.comment;}
       }
@@ -1369,6 +1395,7 @@ function bindAppEvents(){
   document.querySelectorAll(".nav-tab").forEach(t=>t.addEventListener("click", e=>{ 
       if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn")return; 
       
+      // SAUVEGARDE DU SCROLL AVANT CHANGEMENT D'ONGLET
       if(ST.tab === 'planning') { var gc = document.querySelector(".gc"); if(gc) { ST.scrollPlanX = gc.scrollLeft; ST.scrollPlanY = gc.scrollTop; } }
       else if (ST.tab === 'calendrier') { var cw = document.querySelector(".cal-wrapper"); if(cw) { ST.scrollCalX = cw.scrollLeft; ST.scrollCalY = cw.scrollTop; } }
       
@@ -1520,8 +1547,8 @@ function bindModalEvents() {
 
 // === DEMARRAGE ===
 if(checkGasUrl()) {
-    renderApp();
-    loadDB().then(function(res){
+    Promise.all([loadDB(), fetchVacancesAPI()]).then(function(results){
+      var res = results[0];
       if(res){ ST.events=Object.assign({},XLS,res.events); if(res.personnels&&res.personnels.length>0)ST.personnels=res.personnels; if(res.causes&&res.causes.length>0)ST.causes=res.causes; if(res.services&&res.services.length>0)ST.services=res.services; if(res.groupes&&res.groupes.length>0)ST.groupes=res.groupes; }
       ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Planning synchronisé");
     }).catch(function(e){
