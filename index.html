@@ -383,6 +383,372 @@ function showToast(msg,isErr){
 
 function getNameColWidth() { var stub = document.querySelector('.stub-w'); return stub ? stub.offsetWidth : 180; }
 
+// === LOGIQUE IMPORT EXCEL ===
+function batchSend(arr, index, callback) {
+    if(!checkGasUrl()) return;
+    
+    var chunkSize = 150; 
+    var chunk = arr.slice(index, index + chunkSize);
+    if(chunk.length === 0) { callback(); return; }
+    
+    fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({action: 'upsert', payload: chunk}),
+        headers: {'Content-Type': 'text/plain;charset=utf-8'}
+    }).then(function(r) {
+        if(!r.ok) throw new Error("Erreur réseau");
+        var nextIndex = index + chunkSize;
+        var log = document.getElementById("importLog");
+        if(log) log.textContent = "Envoi à Google Sheets : " + Math.min(nextIndex, arr.length) + " / " + arr.length + " absences terminées...";
+        batchSend(arr, nextIndex, callback);
+    }).catch(function(e) {
+        console.error(e);
+        var log = document.getElementById("importLog");
+        if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur d'envoi. Veuillez réessayer.</span>";
+    });
+}
+
+function processExcelImport(arrayBuffer) {
+    var log = document.getElementById("importLog");
+    if(log) log.textContent = "Lecture du fichier Excel en cours...";
+    
+    try {
+        var data = new Uint8Array(arrayBuffer);
+        var workbook = XLSX.read(data, {type: 'array', cellStyles: true, cellDates: true, cellNF: true});
+        
+        var targetSheetName = workbook.SheetNames[0];
+        for(var i=0; i<workbook.SheetNames.length; i++) {
+            if(workbook.SheetNames[i].toLowerCase().indexOf("janvier") > -1 || workbook.SheetNames[i].toLowerCase().indexOf("planning") > -1 || workbook.SheetNames[i].toLowerCase().indexOf("artt") > -1) {
+                targetSheetName = workbook.SheetNames[i];
+                break;
+            }
+        }
+        
+        var worksheet = workbook.Sheets[targetSheetName];
+        
+        if (worksheet['!merges']) {
+            worksheet['!merges'].forEach(function(merge) {
+                var startCellAddr = XLSX.utils.encode_cell({r: merge.s.r, c: merge.s.c});
+                var startCell = worksheet[startCellAddr];
+                if (startCell) {
+                    for (var r = merge.s.r; r <= merge.e.r; r++) {
+                        for (var c = merge.s.c; c <= merge.e.c; c++) {
+                            if (r === merge.s.r && c === merge.s.c) continue; 
+                            var targetAddr = XLSX.utils.encode_cell({r: r, c: c});
+                            if (!worksheet[targetAddr]) worksheet[targetAddr] = {};
+                            worksheet[targetAddr].v = startCell.v;
+                            if(startCell.w) worksheet[targetAddr].w = startCell.w;
+                            if(startCell.t) worksheet[targetAddr].t = startCell.t;
+                            if(startCell.c) worksheet[targetAddr].c = startCell.c;
+                        }
+                    }
+                }
+            });
+        }
+
+        var range = XLSX.utils.decode_range(worksheet['!ref']);
+        var R_days = -1;
+        
+        for(var r = range.s.r; r <= Math.min(range.s.r + 20, range.e.r); r++) {
+            var nums = [];
+            for(var c = range.s.c; c <= Math.min(range.s.c + 100, range.e.c); c++) {
+                var cell = worksheet[XLSX.utils.encode_cell({r: r, c: c})];
+                if(cell && cell.v !== undefined && String(cell.v).trim() !== "") {
+                    nums.push(String(cell.v).trim());
+                }
+            }
+            var str = nums.join(",");
+            if(str.indexOf("1,2,3") > -1 && str.indexOf("10,11") > -1) {
+                R_days = r;
+                break;
+            }
+        }
+        
+        if(R_days === -1) {
+            if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur : Impossible de détecter la ligne des jours. Vérifiez le format.</span>";
+            return;
+        }
+        
+        function norm(s) { return s ? String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : ""; }
+        function getMonthIndex(s) {
+            if(!s) return -1;
+            s = norm(s);
+            var mNames = ["janv","fev","mar","avr","mai","juin","juil","aou","sep","oct","nov","dec"];
+            for(var i=0; i<mNames.length; i++) {
+                if(s.indexOf(mNames[i]) > -1) return i;
+            }
+            return -1;
+        }
+        
+        var colIndexToDate = {};
+        var activeMonthFromHeader = -1;
+        var currentYear = ST.year;
+        var lastDay = -1;
+        var lastMonth = -1;
+
+        for(var c = range.s.c; c <= range.e.c; c++) {
+            var dayCell = worksheet[XLSX.utils.encode_cell({r: R_days, c: c})];
+            if (!dayCell) continue;
+            
+            var dNum = NaN;
+            var m = -1;
+            var y = currentYear;
+
+            if (dayCell.t === 'd' || dayCell.v instanceof Date) {
+                var dt = new Date(dayCell.v);
+                dNum = dt.getDate();
+                m = dt.getMonth();
+                y = dt.getFullYear();
+                activeMonthFromHeader = m;
+            } else {
+                var cellStr = dayCell.w ? String(dayCell.w).trim() : String(dayCell.v).trim();
+                dNum = parseInt(cellStr, 10);
+                if (isNaN(dNum)) continue;
+
+                for (var i = 1; i <= 3; i++) {
+                    var monthCell = worksheet[XLSX.utils.encode_cell({r: R_days - i, c: c})];
+                    if (monthCell && monthCell.v) {
+                        var mStr = monthCell.w ? String(monthCell.w) : String(monthCell.v);
+                        var mIdx = getMonthIndex(mStr);
+                        if (mIdx !== -1) {
+                            activeMonthFromHeader = mIdx;
+                            break;
+                        }
+                    }
+                }
+
+                m = activeMonthFromHeader;
+
+                if (m === -1) {
+                    if (dNum > 20) m = 11;
+                    else m = 0;
+                    activeMonthFromHeader = m;
+                }
+
+                if (dNum <= 5 && lastDay >= 25) {
+                    var expectedNext = (lastMonth === 11) ? 0 : lastMonth + 1;
+                    if (m !== expectedNext) {
+                        m = expectedNext;
+                        activeMonthFromHeader = m;
+                    }
+                } else if (lastDay !== -1 && dNum < lastDay) {
+                    continue; 
+                }
+
+                if (lastMonth === 11 && m === 0 && dNum <= 5 && c > 200) currentYear++;
+                y = currentYear;
+
+                if (m === 11 && dNum > 20 && c < range.s.c + 30) y = ST.year - 1; 
+            }
+
+            colIndexToDate[c] = {y: y, m: m, d: dNum};
+            lastMonth = m;
+            lastDay = dNum; 
+        }
+        
+        var eventsToPush = [];
+        var count = 0;
+        var unrecognized = [];
+        
+        var getCauseId = function(valString) {
+            var nVal = norm(valString);
+            if (!nVal) return null;
+            var clean = nVal.replace(/[^a-z0-9]/g, '');
+            if (clean.indexOf('cp')>-1 || clean.indexOf('ca')>-1 || clean.indexOf('conge')>-1) return 2;
+            if (clean.indexOf('rtt')>-1) return 1;
+            if (clean.indexOf('tele')>-1 || clean === 'tt') return 8;
+            if (clean.indexOf('famill')>-1 || clean.indexOf('evenement')>-1) return 3;
+            if (clean.indexOf('formation')>-1) return 5;
+            if (clean.indexOf('delegation')>-1) return 6;
+            if (clean.indexOf('reunion')>-1) return 4;
+            if (clean === 'rc' || clean.indexOf('repos')>-1) return 7;
+            
+            var cause = ST.causes.find(function(ca) { 
+                var cNorm = norm(ca.short);
+                var cLab = norm(ca.label);
+                return cNorm === nVal || String(ca.id) === valString.trim() || cLab === nVal || cLab.indexOf(nVal) === 0; 
+            });
+            return cause ? cause.id : null;
+        };
+
+        function fixEncoding(str) {
+            if (!str) return "";
+            try {
+                if (str.indexOf('Ã') > -1) {
+                    return decodeURIComponent(Array.prototype.map.call(str, function(c) {
+                        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                    }).join(''));
+                }
+            } catch(e) { }
+            return str;
+        }
+        
+        var newEvents = {};
+
+        for(var r = R_days + 1; r <= range.e.r; r++) {
+            var empId = null;
+            var cellNameFound = "";
+            var bestScore = 0;
+            
+            for(var c2 = range.s.c; c2 < Math.min(range.s.c + 10, range.e.c); c2++) { 
+               var nCell = worksheet[XLSX.utils.encode_cell({r: r, c: c2})];
+               if(!nCell || !nCell.v) continue;
+               var cellStr = norm(String(nCell.v));
+               if(cellStr.length < 3) continue;
+               
+               for(var i=0; i<ST.personnels.length; i++) {
+                   var p = ST.personnels[i];
+                   var nNom = norm(p.nom);
+                   var score = 0;
+                   
+                   if (nNom === cellStr) score = 100;
+                   else if (nNom.replace(/\s+/g, '') === cellStr.replace(/\s+/g, '')) score = 95;
+                   else {
+                       var pWords = nNom.split(/[\s\.\-]+/).filter(function(x){return x.length>2;});
+                       var eWords = cellStr.split(/[\s\.\-]+/).filter(function(x){return x.length>2;});
+                       var matches = 0;
+                       var usedE = {};
+                       for(var j=0; j<pWords.length; j++) {
+                           for(var k=0; k<eWords.length; k++) {
+                               if(usedE[k]) continue;
+                               if (pWords[j] === eWords[k] || pWords[j].indexOf(eWords[k]) === 0 || eWords[k].indexOf(pWords[j]) === 0) {
+                                   matches++;
+                                   usedE[k] = true;
+                                   break;
+                               }
+                           }
+                       }
+                       score = matches * 30;
+                       if (matches > 0 && (matches === pWords.length || matches === eWords.length)) score += 20;
+                   }
+                   
+                   if (score > bestScore && score >= 30) {
+                       bestScore = score;
+                       empId = p.id;
+                       cellNameFound = String(nCell.v);
+                   }
+               }
+               if (empId) break; 
+            }
+            
+            if(empId) {
+               for(var c3 = range.s.c; c3 <= range.e.c; c3++) {
+                  var dateObj = colIndexToDate[c3];
+                  if(!dateObj) continue; 
+                  
+                  var valCell = worksheet[XLSX.utils.encode_cell({r: r, c: c3})];
+                  if(!valCell || valCell.v === undefined || valCell.v === null || valCell.v === "") continue;
+                  
+                  var rawVal = valCell.w ? String(valCell.w) : String(valCell.v);
+                  var causeId = getCauseId(rawVal);
+                  
+                  if(causeId) {
+                     var comment = "";
+                     var period = 'full';
+                     
+                     if (valCell.c && valCell.c.length > 0) {
+                         comment = valCell.c.map(function(cmt){ return cmt.t; }).join(" | ").replace(/\n/g, " ").trim();
+                     } 
+                     
+                     var causeLabelNorm = norm(cLabel(causeId));
+                     var rawValNorm = norm(rawVal);
+                     if (rawValNorm !== causeLabelNorm && rawValNorm !== String(causeId) && rawValNorm.length > 1) {
+                         if (comment) comment += " (" + rawVal.trim() + ")";
+                         else comment = rawVal.trim();
+                     }
+                     
+                     var fullTextForPeriod = (rawVal + " " + comment).toLowerCase();
+                     if (fullTextForPeriod.indexOf('matin') > -1 || fullTextForPeriod.indexOf('1/2') > -1) {
+                         period = 'am';
+                     } else if (fullTextForPeriod.indexOf('aprem') > -1 || fullTextForPeriod.indexOf('après') > -1 || fullTextForPeriod.indexOf('apres') > -1) {
+                         period = 'pm';
+                     }
+                     
+                     comment = fixEncoding(comment);
+                     if (!comment) comment = "Import Excel";
+                     
+                     var baseKey = eKey(empId, dateObj.y, dateObj.m, dateObj.d);
+                     var dbId = baseKey + (period==='full' ? '' : '-'+period);
+                     
+                     if(!newEvents[baseKey]) newEvents[baseKey] = {type:'empty'};
+                     if(period === 'full'){
+                         newEvents[baseKey] = {type:'full', causeId:causeId, comment:comment};
+                     } else {
+                         if(newEvents[baseKey].type !== 'half') newEvents[baseKey] = {type:'half', am:null, pm:null};
+                         if(period === 'am') newEvents[baseKey].am = {causeId:causeId, comment:comment};
+                         if(period === 'pm') newEvents[baseKey].pm = {causeId:causeId, comment:comment};
+                     }
+                     
+                     eventsToPush.push({id: dbId, cause_id: causeId, comment: comment});
+                     count++;
+                  }
+               }
+            } else if (cellNameFound && cellNameFound.length > 3 && cellNameFound.toLowerCase() !== "légende" && cellNameFound.toLowerCase().indexOf("jour férié") === -1 && cellNameFound.toLowerCase().indexOf("week") === -1) {
+                if (unrecognized.indexOf(cellNameFound) === -1) unrecognized.push(cellNameFound);
+            }
+        }
+        
+        var oldDbIdsToDelete = [];
+        Object.keys(ST.events).forEach(function(k) {
+            var ev = ST.events[k];
+            if(ev.type === 'full') oldDbIdsToDelete.push(k);
+            else if (ev.type === 'half') {
+                if(ev.am) oldDbIdsToDelete.push(k+'-am');
+                if(ev.pm) oldDbIdsToDelete.push(k+'-pm');
+            }
+        });
+
+        if(eventsToPush.length === 0 && oldDbIdsToDelete.length === 0) {
+            if(log) log.innerHTML = "<span style='color:#F97316'>Aucune donnée à importer.</span>";
+            return;
+        }
+
+        if(log) log.textContent = "Effacement de l'ancien planning et import en cours (" + count + " absences)...";
+
+        ST.events = newEvents;
+
+        function startUpsert() {
+            if (eventsToPush.length === 0) {
+                if(log) log.innerHTML = "<span style='color:var(--primary)'>✅ Ancien planning effacé.</span>";
+                renderApp();
+                return;
+            }
+            batchSend(eventsToPush, 0, function() {
+                var logHtml = "<span style='color:var(--primary)'>✅ Import terminé avec succès ! ("+count+" absences ajoutées)</span>";
+                if(unrecognized.length > 0) {
+                    logHtml += "<br><span style='color:#F97316; font-size:11px'>Lignes ignorées (noms introuvables) : " + unrecognized.join(', ') + "</span>";
+                }
+                if(log) log.innerHTML = logHtml;
+                renderApp();
+                showToast(count + " absences importées");
+            });
+        }
+
+        if (oldDbIdsToDelete.length > 0) {
+            function batchDelete(ids, idx, cb) {
+                var chunk = ids.slice(idx, idx + 500);
+                if(chunk.length === 0) { cb(); return; }
+                fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({action: 'delete', ids: chunk}),
+                    headers: {'Content-Type': 'text/plain;charset=utf-8'}
+                }).then(function(){
+                    batchDelete(ids, idx + 500, cb);
+                }).catch(function(){
+                    batchDelete(ids, idx + 500, cb);
+                });
+            }
+            batchDelete(oldDbIdsToDelete, 0, startUpsert);
+        } else {
+            startUpsert();
+        }
+        
+    } catch(err) {
+        console.error(err);
+        if(log) log.innerHTML = "<span style='color:#E24B4A'>Erreur technique lors de la lecture du fichier Excel.</span>";
+    }
+}
+
 // --- DONNEES PAR DEFAUT ---
 var CD=[{id:1,label:"JRTT",color:"#E24B4A",short:"1"},{id:2,label:"CP",color:"#3B82F6",short:"2"},{id:3,label:"Evènement Familial",color:"#F97316",short:"3"},{id:4,label:"Réunion Extérieure",color:"#10B981",short:"4"},{id:5,label:"Formation Extérieur",color:"#8B5CF6",short:"5"},{id:6,label:"Délégation Extérieur",color:"#6B7280",short:"6"},{id:7,label:"Repos Compensateur",color:"#1D4ED8",short:"7"},{id:8,label:"Télétravail",color:"#14B8A6",short:"8"}];
 var FERIES={"2026-01-01":1,"2026-04-06":1,"2026-05-01":1,"2026-05-08":1,"2026-05-14":1,"2026-05-25":1,"2026-07-14":1,"2026-08-15":1,"2026-11-01":1,"2026-11-11":1,"2026-12-25":1};
@@ -1379,7 +1745,6 @@ function bindAppEvents(){
   document.querySelectorAll(".nav-tab").forEach(t=>t.addEventListener("click", e=>{ 
       if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn")return; 
       
-      // SAUVEGARDE DU SCROLL AVANT CHANGEMENT D'ONGLET
       if(ST.tab === 'planning') { var gc = document.querySelector(".gc"); if(gc) { ST.scrollPlanX = gc.scrollLeft; ST.scrollPlanY = gc.scrollTop; } }
       else if (ST.tab === 'calendrier') { var cw = document.querySelector(".cal-wrapper"); if(cw) { ST.scrollCalX = cw.scrollLeft; ST.scrollCalY = cw.scrollTop; } }
       
@@ -1474,7 +1839,7 @@ function bindModalEvents() {
     if(cid_full){ 
         ST.events[k]={type:'full',causeId:cid_full,comment:cm_full}; 
         up.push({id:k,cause_id:cid_full,comment:cm_full}); 
-        del.push(k+'-am',k+'-pm');
+        del.push(k+'-am',k+'-pm'); 
     } else { 
         delete ST.events[k]; 
         del.push(k,k+'-am',k+'-pm'); 
