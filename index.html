@@ -144,7 +144,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 /* === MODALES === */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:100;animation:fadeIn 0.2s}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.modal{background:var(--bg1);border-radius:var(--r2);border:1px solid var(--bd1);padding:24px;min-width:320px;max-width:540px;width:92%;box-shadow:0 10px 25px rgba(0,0,0,0.15)}
+.modal{background:var(--bg1);border-radius:var(--r2);border:1px solid var(--bd1);padding:24px;min-width:320px;max-width:640px;width:95%;box-shadow:0 10px 25px rgba(0,0,0,0.15)}
 .modal h3{font-size:18px;font-weight:600;margin-bottom:12px}
 .mr{margin-bottom:16px}
 .mr label{display:block;font-size:13px;color:var(--tx2);margin-bottom:6px;font-weight:600}
@@ -319,15 +319,22 @@ async function loadDB(){
           else if(r.id==="__services__"){ try{loadedSvc=JSON.parse(r.comment);}catch(e){} }
           else if(r.id==="__groupes__"){ try{loadedGrp=JSON.parse(r.comment);}catch(e){} }
           else {
-            var baseKey = r.id.replace('-am','').replace('-pm','');
+            var baseKey = r.id.replace('-am','').replace('-pm','').replace('-ast','');
             if(!ev[baseKey]) ev[baseKey] = { type: 'empty' };
             var parsed = parseCmt(r.comment);
+            var isAst = r.id.endsWith('-ast');
             var isAm = r.id.endsWith('-am') || parsed.p === 'am';
             var isPm = r.id.endsWith('-pm') || parsed.p === 'pm';
-            var isFull = !isAm && !isPm;
-            if(isFull){ ev[baseKey] = { type: 'full', causeId: r.cause_id, comment: parsed.c }; }
-            else {
-                if (ev[baseKey].type !== 'half') ev[baseKey] = { type: 'half', am: null, pm: null };
+            var isFull = !isAst && !isAm && !isPm;
+            
+            if (isAst) {
+                ev[baseKey].astreinte = { causeId: r.cause_id, comment: parsed.c };
+            } else if (isFull) {
+                ev[baseKey].type = 'full';
+                ev[baseKey].causeId = r.cause_id;
+                ev[baseKey].comment = parsed.c;
+            } else {
+                if (ev[baseKey].type !== 'half') { ev[baseKey].type = 'half'; if(!ev[baseKey].am) ev[baseKey].am=null; if(!ev[baseKey].pm) ev[baseKey].pm=null; }
                 if (isAm) ev[baseKey].am = { causeId: r.cause_id, comment: parsed.c };
                 if (isPm) ev[baseKey].pm = { causeId: r.cause_id, comment: parsed.c };
             }
@@ -335,7 +342,14 @@ async function loadDB(){
         });
       }
       Object.keys(ev).forEach(function(k){
-          if(ev[k].type === 'empty' || (ev[k].type === 'half' && !ev[k].am && !ev[k].pm)) delete ev[k];
+          var e = ev[k];
+          var hasCore = (e.type === 'full') || (e.type === 'half' && (e.am || e.pm));
+          var hasAst = !!e.astreinte;
+          if (!hasCore && !hasAst) {
+              delete ev[k];
+          } else if (!hasCore) {
+              e.type = 'empty';
+          }
       });
       setSS("ok");
       return {events:ev, personnels:loadedPers, causes:loadedCauses, services:loadedSvc, groupes:loadedGrp};
@@ -668,19 +682,28 @@ function processExcelImport(arrayBuffer) {
                      comment = fixEncoding(comment);
                      if (!comment) comment = "Import Excel";
                      
+                     var isAst = cLabel(causeId).toUpperCase().indexOf('ASTREINTE') > -1;
                      var baseKey = eKey(empId, dateObj.y, dateObj.m, dateObj.d);
-                     var dbId = baseKey + (period==='full' ? '' : '-'+period);
                      
                      if(!newEvents[baseKey]) newEvents[baseKey] = {type:'empty'};
-                     if(period === 'full'){
-                         newEvents[baseKey] = {type:'full', causeId:causeId, comment:comment};
-                     } else {
-                         if(newEvents[baseKey].type !== 'half') newEvents[baseKey] = {type:'half', am:null, pm:null};
-                         if(period === 'am') newEvents[baseKey].am = {causeId:causeId, comment:comment};
-                         if(period === 'pm') newEvents[baseKey].pm = {causeId:causeId, comment:comment};
-                     }
                      
-                     eventsToPush.push({id: dbId, cause_id: causeId, comment: comment});
+                     if (isAst) {
+                         var dbId = baseKey + '-ast';
+                         newEvents[baseKey].astreinte = {causeId:causeId, comment:comment};
+                         eventsToPush.push({id: dbId, cause_id: causeId, comment: comment});
+                     } else {
+                         var dbId = baseKey + (period==='full' ? '' : '-'+period);
+                         if(period === 'full'){
+                             newEvents[baseKey].type = 'full';
+                             newEvents[baseKey].causeId = causeId;
+                             newEvents[baseKey].comment = comment;
+                         } else {
+                             if(newEvents[baseKey].type !== 'half') { newEvents[baseKey].type = 'half'; newEvents[baseKey].am = null; newEvents[baseKey].pm = null; }
+                             if(period === 'am') newEvents[baseKey].am = {causeId:causeId, comment:comment};
+                             if(period === 'pm') newEvents[baseKey].pm = {causeId:causeId, comment:comment};
+                         }
+                         eventsToPush.push({id: dbId, cause_id: causeId, comment: comment});
+                     }
                      count++;
                   }
                }
@@ -692,6 +715,7 @@ function processExcelImport(arrayBuffer) {
         var oldDbIdsToDelete = [];
         Object.keys(ST.events).forEach(function(k) {
             var ev = ST.events[k];
+            if(ev.astreinte) oldDbIdsToDelete.push(k+'-ast');
             if(ev.type === 'full') oldDbIdsToDelete.push(k);
             else if (ev.type === 'half') {
                 if(ev.am) oldDbIdsToDelete.push(k+'-am');
@@ -922,6 +946,9 @@ function evRange(y1,m1,d1,y2,m2,d2,fs,fg){
       if(fg&&p.groupe!==fg)continue;
       var k=eKey(p.id,y,m,d),ev=ST.events[k];
       if(ev){
+          if (ev.astreinte) {
+              res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.astreinte.causeId,comment:ev.astreinte.comment||"", period:'full'});
+          }
           if (ev.type === 'full') {
               res.push({person:p,date:new Date(dt),day:d,month:m,year:y,causeId:ev.causeId,comment:ev.comment||"", period:'full'});
           } else if (ev.type === 'half') {
@@ -977,54 +1004,67 @@ function applyCellVisuals(ec, ev) {
     ec.title = '';
     if(!ev) return;
     
-    if(ev.type === 'full') {
-        var col = cColor(ev.causeId);
-        ec.style.backgroundColor = col;
-        ec.title = cLabel(ev.causeId)+(ev.comment?"\n"+ev.comment:"");
-        ec.innerHTML = '<span class="ev-l">'+cShort(ev.causeId)+'</span>';
-        if(ev.comment && ev.comment.trim() && ev.comment!=="Import Excel"){ ec.innerHTML += '<span class="ev-dot"></span>'; }
+    var title = [];
+    var hasCmt = false;
+
+    if (ev.astreinte) {
+        title.push(cLabel(ev.astreinte.causeId) + (ev.astreinte.comment && ev.astreinte.comment !== "Import Excel" ? " - " + ev.astreinte.comment : ""));
+        if (ev.astreinte.comment && ev.astreinte.comment !== "Import Excel") hasCmt = true;
+    }
+    if (ev.type === 'full') {
+        title.push(cLabel(ev.causeId) + (ev.comment && ev.comment !== "Import Excel" ? " - " + ev.comment : ""));
+        if (ev.comment && ev.comment !== "Import Excel") hasCmt = true;
     } else if (ev.type === 'half') {
-        var amIsAst = ev.am && cLabel(ev.am.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
-        var pmIsAst = ev.pm && cLabel(ev.pm.causeId).toUpperCase().indexOf('ASTREINTE') > -1;
-        var isHoriz = amIsAst || pmIsAst;
-        
+        if (ev.am) {
+            title.push(cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment && ev.am.comment !== "Import Excel" ? " - " + ev.am.comment : ""));
+            if (ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
+        }
+        if (ev.pm) {
+            title.push(cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment && ev.pm.comment !== "Import Excel" ? " - " + ev.pm.comment : ""));
+            if (ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
+        }
+    }
+    ec.title = title.join("\n");
+
+    var topDiv = '', botDiv = '', fullDiv = '';
+
+    if (ev.astreinte) {
+        var astCol = cColor(ev.astreinte.causeId);
+        topDiv = `<div style="position:absolute; top:0; left:0; right:0; height:50%; background-color:${astCol}; display:flex; align-items:center; justify-content:center; box-sizing:border-box; border-bottom:1px solid rgba(0,0,0,0.2); border-radius:inherit; border-bottom-left-radius:0; border-bottom-right-radius:0; overflow:hidden;"><span class="ev-l" style="font-size:10px; line-height:1;">${cShort(ev.astreinte.causeId)}</span></div>`;
+    }
+
+    if (ev.type === 'full') {
+        if (ev.astreinte) {
+            botDiv = `<div style="position:absolute; bottom:0; left:0; right:0; height:50%; background-color:${cColor(ev.causeId)}; display:flex; align-items:center; justify-content:center; box-sizing:border-box; border-radius:inherit; border-top-left-radius:0; border-top-right-radius:0; overflow:hidden;"><span class="ev-l" style="font-size:10px; line-height:1;">${cShort(ev.causeId)}</span></div>`;
+        } else {
+            ec.style.backgroundColor = cColor(ev.causeId);
+            fullDiv = `<span class="ev-l">${cShort(ev.causeId)}</span>`;
+        }
+    } else if (ev.type === 'half') {
         var amCol = ev.am ? cColor(ev.am.causeId) : 'transparent';
         var pmCol = ev.pm ? cColor(ev.pm.causeId) : 'transparent';
-        
-        if (isHoriz) {
-            ec.style.backgroundImage = 'linear-gradient(to bottom, '+amCol+' 50%, '+pmCol+' 50%)';
+        var amLbl = ev.am ? cShort(ev.am.causeId) : '';
+        var pmLbl = ev.pm ? cShort(ev.pm.causeId) : '';
+
+        if (ev.astreinte) {
+            botDiv = `<div style="position:absolute; bottom:0; left:0; right:0; height:50%; display:flex; box-sizing:border-box; border-radius:inherit; border-top-left-radius:0; border-top-right-radius:0; overflow:hidden;">
+                        <div style="flex:1; background-color:${amCol}; display:flex; align-items:center; justify-content:center; box-sizing:border-box; border-right:1px solid rgba(0,0,0,0.1);"><span class="ev-l" style="font-size:9px; line-height:1;">${amLbl}</span></div>
+                        <div style="flex:1; background-color:${pmCol}; display:flex; align-items:center; justify-content:center; box-sizing:border-box;"><span class="ev-l" style="font-size:9px; line-height:1;">${pmLbl}</span></div>
+                      </div>`;
         } else {
             ec.style.backgroundImage = 'linear-gradient(to bottom right, '+amCol+' 50%, '+pmCol+' 50%)';
-        }
-        
-        var title = "";
-        var hasCmt = false;
-        
-        if(ev.am){
-            title += cLabel(ev.am.causeId) + " (Matin)" + (ev.am.comment ? " - "+ev.am.comment : "");
-            if(ev.am.comment && ev.am.comment !== "Import Excel") hasCmt = true;
-        }
-        if(ev.pm){
-            if(title) title += "\n";
-            title += cLabel(ev.pm.causeId) + " (Aprem)" + (ev.pm.comment ? " - "+ev.pm.comment : "");
-            if(ev.pm.comment && ev.pm.comment !== "Import Excel") hasCmt = true;
-        }
-        
-        ec.title = title;
-        
-        if (isHoriz) {
-            var topLbl = ev.am ? cShort(ev.am.causeId) : '';
-            var botLbl = ev.pm ? cShort(ev.pm.causeId) : '';
-            ec.innerHTML = '<div style="display:flex; flex-direction:column; height:100%; width:100%; justify-content:space-evenly; align-items:center; font-size:10px; font-weight:900; color:white; text-shadow:0 1px 2px rgba(0,0,0,0.8); line-height:1; z-index:2;"><span>'+topLbl+'</span><span>'+botLbl+'</span></div>';
-        } else {
             var lbls = [];
-            if(ev.am) lbls.push(cShort(ev.am.causeId));
-            if(ev.pm) lbls.push(cShort(ev.pm.causeId));
+            if (amLbl) lbls.push(amLbl);
+            if (pmLbl) lbls.push(pmLbl);
             var fs = lbls.length > 1 ? "10px" : "12px";
             var ls = lbls.length > 1 ? "-0.5px" : "normal";
-            ec.innerHTML = '<span class="ev-l" style="font-size:'+fs+'; letter-spacing:'+ls+';">'+lbls.join('/')+'</span>';
+            fullDiv = `<span class="ev-l" style="font-size:${fs}; letter-spacing:${ls};">${lbls.join('/')}</span>`;
         }
-        if(hasCmt) ec.innerHTML += '<span class="ev-dot"></span>';
+    }
+
+    ec.innerHTML = topDiv + botDiv + fullDiv;
+    if (hasCmt) {
+        ec.innerHTML += '<span class="ev-dot"></span>';
     }
 }
 
@@ -1088,71 +1128,51 @@ function processDragSelection() {
         if (ST.selectedCauseId === 'erase') {
             if (existing) {
                 delete ST.events[baseKey];
-                deletes.push(baseKey, baseKey+'-am', baseKey+'-pm');
+                deletes.push(baseKey, baseKey+'-am', baseKey+'-pm', baseKey+'-ast');
             }
         } else {
             var targetPeriod = ST.selectedPeriod;
             var causeObj = ST.causes.find(function(c){return c.id === ST.selectedCauseId});
             var isAstreinte = causeObj && causeObj.label.toUpperCase().indexOf('ASTREINTE') > -1;
-            if(isAstreinte) targetPeriod = 'am';
 
             var conflict = false;
-            var bypassSpecial = false;
 
-            if (targetPeriod === 'am' && isAstreinte && existing && existing.type === 'full') {
-                var oldCause = existing.causeId;
-                var oldCmt = existing.comment;
-                ST.events[baseKey] = { type: 'half', am: {causeId: ST.selectedCauseId, comment: ''}, pm: {causeId: oldCause, comment: oldCmt} };
-                upserts.push({id: baseKey+'-am', causeId: ST.selectedCauseId, comment: ''});
-                upserts.push({id: baseKey+'-pm', causeId: oldCause, comment: oldCmt});
-                deletes.push(baseKey);
-                bypassSpecial = true;
-            }
-            else if (targetPeriod === 'full' && existing && existing.type === 'half' && (!existing.am || !existing.pm)) {
-                var exAmAst = false, exPmAst = false;
-                if(existing.am) {
-                    var cObj1 = ST.causes.find(function(c){return c.id === existing.am.causeId;});
-                    if(cObj1 && cObj1.label.toUpperCase().indexOf('ASTREINTE') > -1) exAmAst = true;
+            if (isAstreinte) {
+                if (!existing) ST.events[baseKey] = { type: 'empty' };
+                if (ST.events[baseKey].astreinte && ST.events[baseKey].astreinte.causeId === ST.selectedCauseId) {
+                    conflict = true;
+                } else {
+                    ST.events[baseKey].astreinte = { causeId: ST.selectedCauseId, comment: '' };
+                    upserts.push({id: baseKey+'-ast', cause_id: ST.selectedCauseId, comment: ''});
                 }
-                if(existing.pm) {
-                    var cObj2 = ST.causes.find(function(c){return c.id === existing.pm.causeId;});
-                    if(cObj2 && cObj2.label.toUpperCase().indexOf('ASTREINTE') > -1) exPmAst = true;
-                }
-                
-                if (exAmAst && !existing.pm) {
-                    ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
-                    upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                    bypassSpecial = true;
-                } else if (exPmAst && !existing.am) {
-                    ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
-                    upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                    bypassSpecial = true;
-                }
-            }
-
-            if (!bypassSpecial) {
+            } else {
                 if (targetPeriod === 'full') {
-                    if (existing) conflict = true;
+                    if (existing && existing.type !== 'empty') conflict = true;
                 } else if (targetPeriod === 'am') {
                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.am))) conflict = true;
                 } else if (targetPeriod === 'pm') {
                     if (existing && (existing.type === 'full' || (existing.type === 'half' && existing.pm))) conflict = true;
                 }
 
-                if (conflict) {
-                    conflicts++;
-                } else {
+                if (!conflict) {
+                    if (!existing) ST.events[baseKey] = { type: 'empty' };
                     if (targetPeriod === 'full') {
-                        ST.events[baseKey] = { type: 'full', causeId: ST.selectedCauseId, comment: '' };
+                        ST.events[baseKey].type = 'full';
+                        ST.events[baseKey].causeId = ST.selectedCauseId;
+                        ST.events[baseKey].comment = '';
                         upserts.push({id: baseKey, cause_id: ST.selectedCauseId, comment: ''});
                         deletes.push(baseKey+'-am', baseKey+'-pm');
+                        delete ST.events[baseKey].am;
+                        delete ST.events[baseKey].pm;
                     } else if (targetPeriod === 'am') {
-                        if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
+                        ST.events[baseKey].type = 'half';
+                        if (!ST.events[baseKey].am) ST.events[baseKey].am = {};
                         ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
                         if(existing && existing.pm) deletes.push(baseKey);
                     } else if (targetPeriod === 'pm') {
-                        if (!existing) ST.events[baseKey] = { type: 'half', am: null, pm: null };
+                        ST.events[baseKey].type = 'half';
+                        if (!ST.events[baseKey].pm) ST.events[baseKey].pm = {};
                         ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
                         if(existing && existing.am) deletes.push(baseKey);
@@ -1255,6 +1275,7 @@ function renderLogin() {
             localStorage.setItem('artt-user', pid);
             ST.currentUser = pid;
             ST.calPid = pid;
+            if (p.isAdmin) ST.isAdmin = true;
             renderApp();
             showToast("Compte créé avec succès !");
             setTimeout(scrollTd, 100);
@@ -1263,6 +1284,7 @@ function renderLogin() {
                 localStorage.setItem('artt-user', pid);
                 ST.currentUser = pid;
                 ST.calPid = pid;
+                if (p.isAdmin) ST.isAdmin = true;
                 renderApp();
                 showToast("Connexion réussie !");
                 setTimeout(scrollTd, 100);
@@ -1327,6 +1349,8 @@ function renderApp(){
       } else if (saved && ST.personnels.find(p => String(p.id) === saved)) {
           ST.currentUser = saved;
           if(!ST.calPid) ST.calPid = saved;
+          var u = ST.personnels.find(p => String(p.id) === saved);
+          if (u && u.isAdmin) ST.isAdmin = true;
       } else {
           renderLogin();
           return;
@@ -1579,9 +1603,13 @@ function rTutoModal() {
 function rModal(){
   var m2=ST.modal, ov=document.createElement('div'); ov.className='ov'; ov.id='mOv';
   var p=ST.personnels.find(x=>String(x.id)===String(m2.pid)), ev=ST.events[m2.key], dw=dow(ST.year,m2.month,m2.day), wk=isoWk(ST.year,m2.month,m2.day);
-  var fe=isFe(ST.year,m2.month,m2.day), va=isVa(ST.year,m2.month,m2.day), we=isWe(ST.year,m2.month,m2.day), fullC='', fullCm='';
+  var fe=isFe(ST.year,m2.month,m2.day), va=isVa(ST.year,m2.month,m2.day), we=isWe(ST.year,m2.month,m2.day), fullC='', fullCm='', astC='', astCm='';
   
   if(ev){
+      if(ev.astreinte) {
+          astC = ev.astreinte.causeId;
+          astCm = ev.astreinte.comment;
+      }
       if(ev.type==='full'){
           fullC=ev.causeId; 
           fullCm=ev.comment;
@@ -1591,12 +1619,31 @@ function rModal(){
       }
   }
   if(fullCm==="Import Excel")fullCm=""; 
+  if(astCm==="Import Excel")astCm=""; 
   
   var badge=fe?' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>':va?' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances (Zone C)</span>':we?' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>':'';
-  var o='<option value="">&mdash; Présent / Aucune &mdash;</option>'; 
-  ST.causes.forEach(c=>o+='<option value="'+c.id+'"'+(fullC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>');
   
-  ov.innerHTML=`<div class="modal"><h3>${p?p.nom:''}</h3><div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">${DL[dw]} ${m2.day} ${MO[m2.month]} ${ST.year} <span style="margin:0 8px">&mdash;</span> S${p2(wk)}${badge}</div><div class="mr"><label>Motif de l'absence (Journée entière)</label><select id="mC_full" style="margin-bottom:8px;">${o}</select></div><div class="mr"><label>Commentaire</label><input id="mCm_full" value="${fullCm}" placeholder="Saisir un commentaire..."/></div><div class="mbtns">${ev?'<button class="btn d" id="dEv">Vider la case</button>':''}<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div></div>`;
+  var o_full='<option value="">&mdash; Aucune &mdash;</option>'; 
+  var o_ast='<option value="">&mdash; Aucune &mdash;</option>'; 
+  ST.causes.forEach(c => {
+      var isAst = c.label.toUpperCase().indexOf('ASTREINTE') > -1;
+      if (isAst) o_ast+='<option value="'+c.id+'"'+(astC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>';
+      else o_full+='<option value="'+c.id+'"'+(fullC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>';
+  });
+  
+  ov.innerHTML=`<div class="modal"><h3>${p?p.nom:''}</h3>
+  <div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">${DL[dw]} ${m2.day} ${MO[m2.month]} ${ST.year} <span style="margin:0 8px">&mdash;</span> S${p2(wk)}${badge}</div>
+  <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:200px;">
+          <div class="mr"><label style="color:var(--primary)">Absence Principale</label><select id="mC_full" style="margin-bottom:8px;">${o_full}</select></div>
+          <div class="mr"><label>Commentaire</label><input id="mCm_full" value="${fullCm}" placeholder="Commentaire..."/></div>
+      </div>
+      <div style="flex:1; min-width:200px;">
+          <div class="mr"><label style="color:#E24B4A">Astreinte</label><select id="mC_ast" style="margin-bottom:8px;">${o_ast}</select></div>
+          <div class="mr"><label>Commentaire</label><input id="mCm_ast" value="${astCm}" placeholder="Commentaire..."/></div>
+      </div>
+  </div>
+  <div class="mbtns">${ev?'<button class="btn d" id="dEv">Vider la case</button>':''}<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div></div>`;
   return ov;
 }
 
@@ -1664,7 +1711,12 @@ function rEModal(){
     if(p.pwd) pwdHtml = `<div class="mr" style="display:flex; align-items:center; gap:10px; margin-top:16px; padding-top:16px; border-top:1px solid var(--bd1);"><input type="checkbox" id="eResetPwd" style="width:auto; transform:scale(1.2);"><label style="margin:0; cursor:pointer; color:#E24B4A; font-weight:700;" for="eResetPwd">⚠️ Réinitialiser le mot de passe</label></div>`;
     else pwdHtml = `<div class="mr" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--bd1);"><span style="font-size:12px; color:var(--tx3); font-style:italic;">Aucun mot de passe défini pour le moment.</span></div>`;
   }
-  ov.innerHTML=`<div class="modal"><h3>${isNew?"Ajouter un employé":"Modifier l'employé"}</h3><div class="mr"><label>Nom complet</label><input id="eNom" value="${p.nom||""}" placeholder="Ex: DUPONT Jean"></div><div class="mr"><label>Service</label><input id="eSvc" list="listSvc" value="${p.service||""}"><datalist id="listSvc">${ST.services.map(s=>`<option value="${s}">`).join('')}</datalist></div><div class="mr"><label>Groupe</label><input id="eGrp" list="listGrp" value="${p.groupe||""}"><datalist id="listGrp">${ST.groupes.map(g=>`<option value="${g}">`).join('')}</datalist></div><div class="mr" style="display:flex; align-items:center; gap:10px;"><input type="checkbox" id="eInactive" style="width:auto; transform:scale(1.2);" ${p.inactive?'checked':''}><label style="margin:0; cursor:pointer;" for="eInactive">Employé inactif (masqué)</label></div>${pwdHtml}<div class="mbtns">${isNew?"":'<button class="btn d" id="dPer">Supprimer</button>'}<button class="btn" id="cEd">Annuler</button><button class="btn p" id="sEd">Enregistrer</button></div></div>`;
+  ov.innerHTML=`<div class="modal"><h3>${isNew?"Ajouter un employé":"Modifier l'employé"}</h3><div class="mr"><label>Nom complet</label><input id="eNom" value="${p.nom||""}" placeholder="Ex: DUPONT Jean"></div><div class="mr"><label>Service</label><input id="eSvc" list="listSvc" value="${p.service||""}"><datalist id="listSvc">${ST.services.map(s=>`<option value="${s}">`).join('')}</datalist></div><div class="mr"><label>Groupe</label><input id="eGrp" list="listGrp" value="${p.groupe||""}"><datalist id="listGrp">${ST.groupes.map(g=>`<option value="${g}">`).join('')}</datalist></div>
+  <div class="half-day-split" style="gap:24px;">
+      <div class="mr" style="display:flex; align-items:center; gap:10px; margin-bottom:0;"><input type="checkbox" id="eInactive" style="width:auto; transform:scale(1.2);" ${p.inactive?'checked':''}><label style="margin:0; cursor:pointer;" for="eInactive">Employé inactif</label></div>
+      <div class="mr" style="display:flex; align-items:center; gap:10px; margin-bottom:0;"><input type="checkbox" id="eIsAdmin" style="width:auto; transform:scale(1.2);" ${p.isAdmin?'checked':''}><label style="margin:0; cursor:pointer; color:var(--primary); font-weight:700;" for="eIsAdmin">👑 Accès Administrateur</label></div>
+  </div>
+  ${pwdHtml}<div class="mbtns">${isNew?"":'<button class="btn d" id="dPer">Supprimer</button>'}<button class="btn" id="cEd">Annuler</button><button class="btn p" id="sEd">Enregistrer</button></div></div>`;
   return ov;
 }
 
@@ -1688,8 +1740,8 @@ function rGrpModal() {
 
 function rPersonnel(){
   var div=document.createElement('div');div.className='tc'; var ps=filtP(true);
-  var html=`<div class="sh"><h2>Employés (${ps.length})</h2><div class="month-filters" style="margin-left:auto; margin-right:16px;"><select id="fSvc"><option value="">Tous les services</option>${selOpts(ST.services,ST.fSvc)}</select><select id="fGrp"><option value="">Tous les groupes</option>${selOpts(ST.groupes,ST.fGrp)}</select></div><button class="btn p" id="addP">+ Ajouter</button></div><table class="tbl"><thead><tr><th>Nom</th><th>Service</th><th>Groupe</th><th>Statut</th><th>Actions</th></tr></thead><tbody>`;
-  ps.forEach(p => { html+=`<tr><td style="font-weight:600;">${p.nom}</td><td>${p.service}</td><td><span style="color:var(--primary);font-weight:600;">${p.groupe}</span></td><td>${p.inactive?'<span style="background:#fce7f3; color:#db2777; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Inactif</span>':'<span style="background:#dcfce7; color:#166534; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Actif</span>'}</td><td><button class="eb edit-pers" data-ep="${p.id}">Modifier</button></td></tr>`; });
+  var html=`<div class="sh"><h2>Employés (${ps.length})</h2><div class="month-filters" style="margin-left:auto; margin-right:16px;"><select id="fSvc"><option value="">Tous les services</option>${selOpts(ST.services,ST.fSvc)}</select><select id="fGrp"><option value="">Tous les groupes</option>${selOpts(ST.groupes,ST.fGrp)}</select></div><button class="btn p" id="addP">+ Ajouter</button></div><table class="tbl"><thead><tr><th>Nom</th><th>Service</th><th>Groupe</th><th>Statut</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>`;
+  ps.forEach(p => { html+=`<tr><td style="font-weight:600;">${p.nom}</td><td>${p.service}</td><td><span style="color:var(--primary);font-weight:600;">${p.groupe}</span></td><td>${p.inactive?'<span style="background:#fce7f3; color:#db2777; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Inactif</span>':'<span style="background:#dcfce7; color:#166534; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Actif</span>'}</td><td>${p.isAdmin?'<span style="background:#fef08a; color:#b45309; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Admin</span>':'<span style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Utilisateur</span>'}</td><td><button class="eb edit-pers" data-ep="${p.id}">Modifier</button></td></tr>`; });
   html+='</tbody></table>'; div.innerHTML=html; return div;
 }
 
@@ -1820,6 +1872,7 @@ function bindAppEvents(){
       var keys = Object.keys(ST.events).filter(k=>k!=="__personnels__"&&k.split('-').length>=4).sort((a,b)=>new Date(a.split('-')[1],a.split('-')[2],a.split('-')[3]).getTime()-new Date(b.split('-')[1],b.split('-')[2],b.split('-')[3]).getTime());
       keys.forEach(k => {
           var ev=ST.events[k], pts=k.split('-'), p=ST.personnels.find(x=>String(x.id)===String(pts[0])), dtStr=p2(pts[3])+"/"+p2(parseInt(pts[2])+1)+"/"+pts[1]; if(!p)return;
+          if(ev.astreinte) data.push([dtStr,p.nom,p.service,p.groupe,cLabel(ev.astreinte.causeId),'Jour entier',ev.astreinte.comment==="Import Excel"?"":ev.astreinte.comment||""]);
           if(ev.type==='full') data.push([dtStr,p.nom,p.service,p.groupe,cLabel(ev.causeId),'Jour entier',ev.comment==="Import Excel"?"":ev.comment||""]);
           else if(ev.type==='half'){ if(ev.am)data.push([dtStr,p.nom,p.service,p.groupe,cLabel(ev.am.causeId),'Matin',ev.am.comment==="Import Excel"?"":ev.am.comment||""]); if(ev.pm)data.push([dtStr,p.nom,p.service,p.groupe,cLabel(ev.pm.causeId),'Après-midi',ev.pm.comment==="Import Excel"?"":ev.pm.comment||""]); }
       });
@@ -1834,18 +1887,42 @@ function bindModalEvents() {
   var mOv=document.getElementById("mOv"),cMod=document.getElementById("cMod"),sMod=document.getElementById("sMod"),dEvBtn=document.getElementById("dEv");
   if(mOv)mOv.addEventListener("click", e=>{if(e.target===mOv){ST.modal=null;renderApp();}});
   if(cMod)cMod.addEventListener("click", ()=>{ST.modal=null;renderApp();});
-  if(dEvBtn)dEvBtn.addEventListener("click", ()=>{ var k=ST.modal.key; delete ST.events[k]; ST.modal=null; renderApp(); saveEvsDB([], [k, k+'-am', k+'-pm']).then(()=>showToast("Absence supprimée")); });
+  if(dEvBtn)dEvBtn.addEventListener("click", ()=>{ var k=ST.modal.key; delete ST.events[k]; ST.modal=null; renderApp(); saveEvsDB([], [k, k+'-am', k+'-pm', k+'-ast']).then(()=>showToast("Absence supprimée")); });
   if(sMod)sMod.addEventListener("click", ()=>{
-    var cid_full=parseInt(document.getElementById("mC_full").value)||null, cm_full=document.getElementById("mCm_full").value.trim(), k=ST.modal.key;
+    var cid_full=parseInt(document.getElementById("mC_full").value)||null, cm_full=document.getElementById("mCm_full").value.trim();
+    var cid_ast=parseInt(document.getElementById("mC_ast").value)||null, cm_ast=document.getElementById("mCm_ast").value.trim();
+    var k=ST.modal.key;
     var up=[], del=[];
     
-    if(cid_full){ 
-        ST.events[k]={type:'full',causeId:cid_full,comment:cm_full}; 
-        up.push({id:k,cause_id:cid_full,comment:cm_full}); 
-        del.push(k+'-am',k+'-pm'); 
+    if (!ST.events[k]) ST.events[k] = {type: 'empty'};
+    
+    if (cid_full) { 
+        ST.events[k].type = 'full';
+        ST.events[k].causeId = cid_full;
+        ST.events[k].comment = cm_full; 
+        up.push({id:k, cause_id:cid_full, comment:cm_full}); 
+        del.push(k+'-am', k+'-pm'); 
+        delete ST.events[k].am;
+        delete ST.events[k].pm;
     } else { 
-        delete ST.events[k]; 
-        del.push(k,k+'-am',k+'-pm'); 
+        ST.events[k].type = 'empty';
+        delete ST.events[k].causeId;
+        delete ST.events[k].comment;
+        delete ST.events[k].am;
+        delete ST.events[k].pm;
+        del.push(k, k+'-am', k+'-pm'); 
+    }
+    
+    if (cid_ast) {
+        ST.events[k].astreinte = { causeId: cid_ast, comment: cm_ast };
+        up.push({id:k+'-ast', cause_id:cid_ast, comment:cm_ast});
+    } else {
+        delete ST.events[k].astreinte;
+        del.push(k+'-ast');
+    }
+    
+    if (ST.events[k].type === 'empty' && !ST.events[k].astreinte) {
+        delete ST.events[k];
     }
     
     ST.modal=null; renderApp(); saveEvsDB(up, del).then(()=>showToast("Absence enregistrée"));
@@ -1855,11 +1932,14 @@ function bindModalEvents() {
   if(cEd)cEd.addEventListener("click", ()=>{ST.eModal=null;renderApp();});
   if(dPer)dPer.addEventListener("click", ()=>{ ST.personnels=ST.personnels.filter(p=>String(p.id)!==String(ST.eModal.pid)); ST.eModal=null; saveConfig(); renderApp(); });
   if(sEd)sEd.addEventListener("click", ()=>{
-    var nom=document.getElementById("eNom").value, svc=document.getElementById("eSvc").value.trim(), grp=document.getElementById("eGrp").value.trim(), inact=document.getElementById("eInactive") ? document.getElementById("eInactive").checked : false; if(!nom)return;
+    var nom=document.getElementById("eNom").value, svc=document.getElementById("eSvc").value.trim(), grp=document.getElementById("eGrp").value.trim();
+    var inact=document.getElementById("eInactive") ? document.getElementById("eInactive").checked : false;
+    var isAdm=document.getElementById("eIsAdmin") ? document.getElementById("eIsAdmin").checked : false;
+    if(!nom)return;
     var rPwdCb = document.getElementById("eResetPwd"); var doReset = rPwdCb ? rPwdCb.checked : false;
     if(svc&&ST.services.indexOf(svc)===-1)ST.services.push(svc); if(grp&&ST.groupes.indexOf(grp)===-1)ST.groupes.push(grp);
-    if(ST.eModal.pid){ var p=ST.personnels.find(x=>String(x.id)===String(ST.eModal.pid)); if(p){p.nom=nom;p.service=svc;p.groupe=grp;p.inactive=inact; if(doReset) delete p.pwd;} }
-    else{ ST.personnels.push({id:Date.now(),nom:nom,service:svc,groupe:grp,inactive:inact}); }
+    if(ST.eModal.pid){ var p=ST.personnels.find(x=>String(x.id)===String(ST.eModal.pid)); if(p){p.nom=nom;p.service=svc;p.groupe=grp;p.inactive=inact; p.isAdmin=isAdm; if(doReset) delete p.pwd;} }
+    else{ ST.personnels.push({id:Date.now(),nom:nom,service:svc,groupe:grp,inactive:inact, isAdmin:isAdm}); }
     ST.eModal=null; saveConfig(); renderApp(); if(doReset) showToast("Mot de passe réinitialisé.");
   });
   
