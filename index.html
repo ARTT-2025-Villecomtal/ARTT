@@ -1732,7 +1732,14 @@ function rEModal(){
     if(p.pwd) pwdHtml = `<div class="mr" style="display:flex; align-items:center; gap:10px; margin-top:16px; padding-top:16px; border-top:1px solid var(--bd1);"><input type="checkbox" id="eResetPwd" style="width:auto; transform:scale(1.2);"><label style="margin:0; cursor:pointer; color:#E24B4A; font-weight:700;" for="eResetPwd">⚠️ Réinitialiser le mot de passe</label></div>`;
     else pwdHtml = `<div class="mr" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--bd1);"><span style="font-size:12px; color:var(--tx3); font-style:italic;">Aucun mot de passe défini pour le moment.</span></div>`;
   }
-  ov.innerHTML=`<div class="modal"><h3>${isNew?"Ajouter un employé":"Modifier l'employé"}</h3><div class="mr"><label>Nom complet</label><input id="eNom" value="${p.nom||""}" placeholder="Ex: DUPONT Jean"></div><div class="mr"><label>Service</label><input id="eSvc" list="listSvc" value="${p.service||""}"><datalist id="listSvc">${ST.services.map(s=>`<option value="${s}">`).join('')}</datalist></div><div class="mr"><label>Groupe</label><input id="eGrp" list="listGrp" value="${p.groupe||""}"><datalist id="listGrp">${ST.groupes.map(g=>`<option value="${g}">`).join('')}</datalist></div>
+  
+  var oSvc='<option value="">-- Sélectionner un service --</option>' + ST.services.map(s=>`<option value="${s}"${p.service===s?' selected':''}>${s}</option>`).join('');
+  var oGrp='<option value="">-- Sélectionner un groupe --</option>' + ST.groupes.map(g=>`<option value="${g}"${p.groupe===g?' selected':''}>${g}</option>`).join('');
+
+  ov.innerHTML=`<div class="modal"><h3>${isNew?"Ajouter un employé":"Modifier l'employé"}</h3>
+  <div class="mr"><label>Nom complet</label><input id="eNom" value="${p.nom||""}" placeholder="Ex: DUPONT Jean"></div>
+  <div class="mr"><label>Service</label><select id="eSvc">${oSvc}</select></div>
+  <div class="mr"><label>Groupe</label><select id="eGrp">${oGrp}</select></div>
   <div class="half-day-split" style="gap:24px;">
       <div class="mr" style="display:flex; align-items:center; gap:10px; margin-bottom:0;"><input type="checkbox" id="eInactive" style="width:auto; transform:scale(1.2);" ${p.inactive?'checked':''}><label style="margin:0; cursor:pointer;" for="eInactive">Employé inactif</label></div>
       <div class="mr" style="display:flex; align-items:center; gap:10px; margin-bottom:0;"><input type="checkbox" id="eIsAdmin" style="width:auto; transform:scale(1.2);" ${p.isAdmin?'checked':''}><label style="margin:0; cursor:pointer; color:var(--primary); font-weight:700;" for="eIsAdmin">👑 Accès Administrateur</label></div>
