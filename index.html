@@ -776,7 +776,6 @@ function processExcelImport(arrayBuffer) {
 
 // --- DONNEES PAR DEFAUT ---
 var CD=[{id:1,label:"JRTT",color:"#E24B4A",short:"1"},{id:2,label:"CP",color:"#3B82F6",short:"2"},{id:3,label:"Evènement Familial",color:"#F97316",short:"3"},{id:4,label:"Réunion Extérieure",color:"#10B981",short:"4"},{id:5,label:"Formation Extérieur",color:"#8B5CF6",short:"5"},{id:6,label:"Délégation Extérieur",color:"#6B7280",short:"6"},{id:7,label:"Repos Compensateur",color:"#1D4ED8",short:"7"},{id:8,label:"Télétravail",color:"#14B8A6",short:"8"}];
-var FERIES={"2026-01-01":1,"2026-04-06":1,"2026-05-01":1,"2026-05-08":1,"2026-05-14":1,"2026-05-25":1,"2026-07-14":1,"2026-08-15":1,"2026-11-01":1,"2026-11-11":1,"2026-12-25":1};
 var VACANCES=[
   ["2025-10-18","2025-11-02"],
   ["2025-12-20","2026-01-04"],
@@ -785,7 +784,7 @@ var VACANCES=[
   ["2026-07-04","2026-08-31"],
   ["2026-10-17","2026-11-01"],
   ["2026-12-19","2027-01-03"],
-  ["2027-02-20","2027-03-07"],
+  ["2027-02-06","2027-02-21"],
   ["2027-04-24","2027-05-09"],
   ["2027-07-07","2027-08-31"]
 ];
@@ -862,7 +861,29 @@ var ST={
 // --- Helpers de dates ---
 function p2(n){return String(n).padStart(2,"0");}
 function dStr(y,m,d){return y+"-"+p2(m+1)+"-"+p2(d);}
-function isFe(y,m,d){return !!FERIES[dStr(y,m,d)];}
+
+function getEaster(year) {
+    var a = year % 19, b = Math.floor(year / 100), c = year % 100;
+    var d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+    var h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+    var l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    var month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+    var day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(year, month, day);
+}
+
+function isFe(y,m,d){
+    if ((m === 0 && d === 1) || (m === 4 && d === 1) || (m === 4 && d === 8) || (m === 6 && d === 14) || 
+        (m === 7 && d === 15) || (m === 10 && d === 1) || (m === 10 && d === 11) || (m === 11 && d === 25)) return true;
+    var easter = getEaster(y);
+    var dt = new Date(y, m, d).getTime();
+    var paquesLundi = new Date(easter); paquesLundi.setDate(easter.getDate() + 1);
+    var ascension = new Date(easter); ascension.setDate(easter.getDate() + 39);
+    var pentecoteLundi = new Date(easter); pentecoteLundi.setDate(easter.getDate() + 50);
+    if (dt === paquesLundi.getTime() || dt === ascension.getTime() || dt === pentecoteLundi.getTime()) return true;
+    return false;
+}
+
 function isVa(y,m,d){var s=dStr(y,m,d);for(var i=0;i<VACANCES.length;i++){if(s>=VACANCES[i][0]&&s<=VACANCES[i][1])return true;}return false;}
 function isWe(y,m,d){var w=new Date(y,m,d).getDay();return w===0||w===6;}
 function isTd(y,m,d){return y===TODAY.getFullYear()&&m===TODAY.getMonth()&&d===TODAY.getDate();}
@@ -1978,29 +1999,56 @@ function bindModalEvents() {
 }
 
 // === DEMARRAGE ===
-if(checkGasUrl()) {
-    loadDB().then(function(res){
-      if(res){ ST.events=Object.assign({},XLS,res.events); if(res.personnels&&res.personnels.length>0)ST.personnels=res.personnels; if(res.causes&&res.causes.length>0)ST.causes=res.causes; if(res.services&&res.services.length>0)ST.services=res.services; if(res.groupes&&res.groupes.length>0)ST.groupes=res.groupes; }
-      ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Planning synchronisé");
-    }).catch(function(e){
-      console.warn("Mode hors ligne"); ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Mode hors ligne activé", true);
-    });
-
-    setInterval(function(){
-      loadDB().then(function(res){
-        if(res){
-          var oE=JSON.stringify(ST.events), oP=JSON.stringify(ST.personnels), oC=JSON.stringify(ST.causes), oS=JSON.stringify(ST.services), oG=JSON.stringify(ST.groupes);
-          var tE=Object.assign({},XLS,res.events), tP=(res.personnels&&res.personnels.length>0)?res.personnels:ST.personnels, tC=(res.causes&&res.causes.length>0)?res.causes:ST.causes, tS=(res.services&&res.services.length>0)?res.services:ST.services, tG=(res.groupes&&res.groupes.length>0)?res.groupes:ST.groupes;
-          if (JSON.stringify(tE)!==oE || JSON.stringify(tP)!==oP || JSON.stringify(tC)!==oC || JSON.stringify(tS)!==oS || JSON.stringify(tG)!==oG) {
-              ST.events=tE; ST.personnels=tP; ST.causes=tC; ST.services=tS; ST.groupes=tG;
-              if(ST.tab==="planning"&&!ST.modal&&!ST.bModal&&!ST.tutoModal) renderApp();
-          }
+async function fetchVacances() {
+    try {
+        // API Open Data du Gouvernement (Education Nationale) - Zone C
+        // On passe à 1000 résultats (rows=1000) pour ne rater aucune année future
+        const res = await fetch("https://data.education.gouv.fr/api/records/1.0/search/?dataset=fr-en-calendrier-scolaire&q=&rows=1000&refine.zones=Zone+C&refine.population=%C3%89l%C3%A8ves");
+        const data = await res.json();
+        if (data && data.records) {
+            let newVacances = [];
+            data.records.forEach(r => {
+                if (r.fields && r.fields.start_date && r.fields.end_date) {
+                    newVacances.push([r.fields.start_date.substring(0, 10), r.fields.end_date.substring(0, 10)]);
+                }
+            });
+            if (newVacances.length > 0) {
+                // Au lieu d'écraser, on FUSIONNE les dates de l'Etat avec nos prévisions manuelles
+                // Ainsi, on a les vraies dates quand elles existent, et des dates par défaut pour 2028+
+                VACANCES = newVacances.concat(VACANCES);
+            }
         }
-      });
-    }, 60000);
-} else {
-    renderApp();
+    } catch(e) {
+        console.log("Erreur de connexion à l'API du gouvernement, utilisation des dates par défaut.", e);
+    }
 }
+
+// On lance la récupération des vacances avant de démarrer l'application
+fetchVacances().then(function() {
+    if(checkGasUrl()) {
+        loadDB().then(function(res){
+          if(res){ ST.events=Object.assign({},XLS,res.events); if(res.personnels&&res.personnels.length>0)ST.personnels=res.personnels; if(res.causes&&res.causes.length>0)ST.causes=res.causes; if(res.services&&res.services.length>0)ST.services=res.services; if(res.groupes&&res.groupes.length>0)ST.groupes=res.groupes; }
+          ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Planning synchronisé");
+        }).catch(function(e){
+          console.warn("Mode hors ligne"); ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Mode hors ligne activé", true);
+        });
+
+        setInterval(function(){
+          loadDB().then(function(res){
+            if(res){
+              var oE=JSON.stringify(ST.events), oP=JSON.stringify(ST.personnels), oC=JSON.stringify(ST.causes), oS=JSON.stringify(ST.services), oG=JSON.stringify(ST.groupes);
+              var tE=Object.assign({},XLS,res.events), tP=(res.personnels&&res.personnels.length>0)?res.personnels:ST.personnels, tC=(res.causes&&res.causes.length>0)?res.causes:ST.causes, tS=(res.services&&res.services.length>0)?res.services:ST.services, tG=(res.groupes&&res.groupes.length>0)?res.groupes:ST.groupes;
+              if (JSON.stringify(tE)!==oE || JSON.stringify(tP)!==oP || JSON.stringify(tC)!==oC || JSON.stringify(tS)!==oS || JSON.stringify(tG)!==oG) {
+                  ST.events=tE; ST.personnels=tP; ST.causes=tC; ST.services=tS; ST.groupes=tG;
+                  if(ST.tab==="planning"&&!ST.modal&&!ST.bModal&&!ST.tutoModal) renderApp();
+              }
+            }
+          });
+        }, 60000);
+    } else {
+        renderApp();
+    }
+});
 </script>
 </body>
 </html>
