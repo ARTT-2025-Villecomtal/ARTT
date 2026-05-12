@@ -24,6 +24,13 @@
 }
 body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13px; overflow:hidden; height: 100dvh;}
 
+/* === MODE FOCUS (MAXIMISATION) === */
+.app.focus-mode .topbar .logo-container, 
+.app.focus-mode .topbar .sync-indicator,
+.app.focus-mode .legend-bar,
+.app.focus-mode .month-nav { display: none !important; }
+.app.focus-mode .topbar { padding: 5px 10px; min-height: auto; }
+
 /* === BARRES DE DÉFILEMENT === */
 ::-webkit-scrollbar { width: 10px; height: 14px; }
 ::-webkit-scrollbar-thumb { background-color: var(--tx3); border-radius: 8px; border: 3px solid var(--bg3); }
@@ -797,7 +804,7 @@ var TODAY=new Date();
 var ST={
   tab:"calendrier", year:2026, month:TODAY.getFullYear()===2026?TODAY.getMonth():0, fSvc:"", fGrp:"", fSearch:"", calSvc:"", calPid:"", selectedCauseId: null, selectedPeriod: "full",
   modal:null, eModal:null, pModal:null, svcModal:null, grpModal:null, bModal:null, tutoModal:false, isAdmin:false, loaded:false, currentUser: null, 
-  scrollPlanX: 0, scrollPlanY: 0, scrollCalX: 0, scrollCalY: 0, initialScrollDone: false, ignoreScroll: false, drag: { active: false, pid: null, startDt: null, endDt: null },
+  scrollPlanX: 0, scrollPlanY: 0, scrollCalX: 0, scrollCalY: 0, initialScrollDone: false, ignoreScroll: false, drag: { active: false, pid: null, startDt: null, endDt: null }, focusMode: false,
   events: {}, causes:CD, services:["Avenir","CG","DL-producteur","DU","Flux","Maintenance","Perf & Sécu","Production","Qualité, Environnement","Restaurant","RH","Sécurité"], groupes:["Apprenti","Apprentie","Assist Gestion","Back-up","Cadre","CODU","Coordinateur","Opérat","Resp Op","Resp Tech","Resp Tech WE","Tech"],
   personnels:[
     {id:1,nom:"ARTIGALA Jean-Yves",service:"Sécurité",groupe:"Apprenti"},
@@ -992,7 +999,7 @@ function scrollTd(){
     var offset = todayEl.offsetLeft - nameWidth - (gc.clientWidth / 2) + 14;
     gc.scrollTo({left: Math.max(0, offset), behavior: 'smooth'});
     setTimeout(function(){ 
-        if(document.querySelector(".gc")) ST.scrollPlanX = document.querySelector(".gc").scrollLeft;
+        if(document.querySelector(".gc")) ST.lastScrollX = document.querySelector(".gc").scrollLeft;
         ST.ignoreScroll = false; 
     }, 600);
   }
@@ -1188,13 +1195,13 @@ function processDragSelection() {
                     } else if (targetPeriod === 'am') {
                         ST.events[baseKey].type = 'half';
                         if (!ST.events[baseKey].am) ST.events[baseKey].am = {};
-                        ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
+                        ST.events[k].am = {causeId: ST.selectedCauseId, comment: ''};
                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
                         if(existing && existing.pm) deletes.push(baseKey);
                     } else if (targetPeriod === 'pm') {
                         ST.events[baseKey].type = 'half';
                         if (!ST.events[baseKey].pm) ST.events[baseKey].pm = {};
-                        ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
+                        ST.events[k].pm = {causeId: ST.selectedCauseId, comment: ''};
                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
                         if(existing && existing.am) deletes.push(baseKey);
                     }
@@ -1385,7 +1392,9 @@ function renderApp(){
   var calElemBefore = document.querySelector(".cal-wrapper");
   if(calElemBefore && ST.tab === "calendrier") { ST.scrollCalX = calElemBefore.scrollLeft; ST.scrollCalY = calElemBefore.scrollTop; }
 
-  var app=document.getElementById("app"); app.innerHTML="";
+  var app=document.getElementById("app"); 
+  app.className = "app" + (ST.focusMode ? " focus-mode" : "");
+  app.innerHTML="";
   
   var userNameDisplay = "";
   if (ST.currentUser) {
@@ -1406,17 +1415,18 @@ function renderApp(){
       <div class="sync-indicator"><div class="sync-dot ${ST.loaded?"ok":"spin"}" id="sD"></div><span id="sL">${ST.loaded?"Synchronisé":"Chargement..."}</span></div>
       ${userNameDisplay ? `<span style="font-size:11px; font-weight:700; color:var(--primary); background:var(--bg2); padding:2px 8px; border-radius:10px;">${userNameDisplay}</span>` : ''}
     </div>
-    <div class="year-nav"><button id="pY">&lt;</button><span>Planning Usine ${ST.year}</span><button id="nY">&gt;</button></div>
+    <div class="year-nav"><button id="pY">&lt;</button><span>Usine ${ST.year}</span><button id="nY">&gt;</button></div>
     <div class="nav-tabs">
-      <button class="nav-tab${ST.tab==='planning'?' active':''}" data-tab="planning">Planning global</button>
-      <button class="nav-tab${ST.tab==='calendrier'?' active':''}" data-tab="calendrier">Calendrier personnel</button>
-      <button class="nav-tab" id="themeToggle" title="Mode Sombre / Clair">${document.documentElement.getAttribute('data-theme')==='dark'?'☀️ Clair':'🌙 Sombre'}</button>
-      ${ST.isAdmin?`<button class="nav-tab${ST.tab==='personnel'?' active':''}" data-tab="personnel">Personnel</button><button class="nav-tab${ST.tab==='parametres'?' active':''}" data-tab="parametres">Paramètres</button><button class="nav-tab" id="lockBtn" style="padding:10px;" title="Verrouiller l'accès">🔒</button>`:`<input type="password" id="adminCode" placeholder="Code Admin..." maxlength="4" style="width:110px;padding:10px 12px;border:1px solid var(--bd1);border-radius:8px;font-size:14px;background:var(--bg2);">`}
+      <button class="nav-tab${ST.tab==='planning'?' active':''}" data-tab="planning" style="text-align:center; line-height:1.2;">Vue<br>Global</button>
+      <button class="nav-tab${ST.tab==='calendrier'?' active':''}" data-tab="calendrier" style="text-align:center; line-height:1.2;">Vue<br>Perso</button>
+      <button class="nav-tab" id="toggleFocus" title="Mode Focus" style="text-align:center; line-height:1.2; ${ST.focusMode ? 'background:var(--primary); color:white;' : 'background:#fef3c7; color:#92400e; border-color:#fcd34d;'}">${ST.focusMode ? 'Vue<br>Normale' : 'Vue<br>Smartphone'}</button>
+      <button class="nav-tab" id="themeToggle" title="Thème">${document.documentElement.getAttribute('data-theme')==='dark'?'☀️':'🌙'}</button>
+      ${ST.isAdmin?`<button class="nav-tab${ST.tab==='personnel'?' active':''}" data-tab="personnel">Personnel</button><button class="nav-tab${ST.tab==='parametres'?' active':''}" data-tab="parametres">Param</button><button class="nav-tab" id="lockBtn" style="padding:10px;" title="Verrouiller">🔒</button>`:`<input type="password" id="adminCode" placeholder="Code..." maxlength="4" style="width:70px;padding:10px 8px;border:1px solid var(--bd1);border-radius:8px;font-size:14px;background:var(--bg2);">`}
       <button class="nav-tab" id="logoutBtn" style="color:#E24B4A;border-color:#fca5a5;background:#fef2f2;">Déconnexion</button>
     </div>
     <div class="bilan-btns">
-      <button class="bilan-btn" id="bS0" style="background:var(--bg2);color:var(--tx1);">&#128337; Absent cette semaine</button>
-      <button class="bilan-btn" id="bS_next" style="background:var(--bg2);color:var(--tx1);">&#128337; Absent la semaine prochaine</button>
+      <button class="bilan-btn" id="bS0" style="background:var(--bg2);color:var(--tx1);">&#128337; Absent S</button>
+      <button class="bilan-btn" id="bS_next" style="background:var(--bg2);color:var(--tx1);">&#128337; Absent S+1</button>
       <button class="bilan-btn" id="bS1">&#128337; Bilan S-1</button>
       ${ST.isAdmin ? `
       <button class="bilan-btn" id="bM1">&#128337; Bilan M-1</button>
@@ -1490,9 +1500,9 @@ function renderModals() {
 }
 
 function getLegendBarHTML() {
-  var html = '<div class="legend-bar"><div class="legend-pill-container"><div style="font-size:14px; font-weight:800; color:var(--tx2); margin-right:8px;">🖌️ Saisie rapide :</div><button class="legend-pill' + (ST.selectedCauseId === 'erase' ? ' active' : '') + '" style="background:#fce7f3;color:#db2777;' + (ST.selectedCauseId === 'erase' ? 'border-color:#db2777;' : '') + '" data-cause="erase"><span style="font-size:13px">🧽</span> Gomme</button>';
+  var html = '<div class="legend-bar"><div class="legend-pill-container"><div style="font-size:14px; font-weight:800; color:var(--tx2); margin-right:8px;">🖌️ Saisie :</div><button class="legend-pill' + (ST.selectedCauseId === 'erase' ? ' active' : '') + '" style="background:#fce7f3;color:#db2777;' + (ST.selectedCauseId === 'erase' ? 'border-color:#db2777;' : '') + '" data-cause="erase">🧽</button>';
   ST.causes.forEach(c => { html += '<button class="legend-pill' + (ST.selectedCauseId === c.id ? ' active' : '') + '" style="background:'+c.color+'22;color:'+c.color+';' + (ST.selectedCauseId === c.id ? 'border-color:'+c.color+';' : '') + '" data-cause="' + c.id + '">' + c.label + ' (' + c.id + ')</button>'; });
-  html += '</div><div class="legend-extras"><div class="leg-item"><div class="leg-swatch" style="background:#fde68a"></div>Férié</div><div class="leg-item"><div class="leg-swatch" style="background:#dbeafe"></div>Vacances</div><div class="leg-item"><div class="leg-swatch" style="background:#bbf7d0"></div>Auj.</div></div></div>'; return html;
+  html += '</div><div class="legend-extras"><div class="leg-item"><div class="leg-swatch" style="background:#fde68a"></div>Férié</div><div class="leg-item"><div class="leg-swatch" style="background:#dbeafe"></div>Vac.</div><div class="leg-item"><div class="leg-swatch" style="background:#bbf7d0"></div>Auj.</div></div></div>'; return html;
 }
 
 function rPlanning() {
@@ -1509,11 +1519,11 @@ function rPlanning() {
     var mn = document.createElement("div");
     mn.className = "month-nav";
     mn.innerHTML = '<div class="month-filters">'
-        + '<select id="fSvc"><option value="">Tous les services</option>'+selOpts(ST.services,ST.fSvc)+'</select>'
-        + '<select id="fGrp"><option value="">Tous les groupes</option>'+selOpts(ST.groupes,ST.fGrp)+'</select>'
-        + '<input type="text" id="fSearch" class="search-input" style="margin-left:10px; width:200px;" placeholder="🔎 Rechercher un employé..." value="'+ST.fSearch+'">'
+        + '<select id="fSvc"><option value="">Services</option>'+selOpts(ST.services,ST.fSvc)+'</select>'
+        + '<select id="fGrp"><option value="">Groupes</option>'+selOpts(ST.groupes,ST.fGrp)+'</select>'
+        + '<input type="text" id="fSearch" class="search-input" style="margin-left:10px; width:150px;" placeholder="🔎 Nom..." value="'+ST.fSearch+'">'
         + pt + '</div>'
-        + '<div class="month-btns-wrap">' + MO.map((m,i)=>`<button class="month-btn" data-month="${i}">${m}</button>`).join('') + '</div>';
+        + '<div class="month-btns-wrap">' + MO.map((m,i)=>`<button class="month-btn" data-month="${i}">${MS[i]}</button>`).join('') + '</div>';
     
     div.appendChild(mn);
     var gc = document.createElement("div");
@@ -1543,7 +1553,7 @@ function buildGrid() {
     var hdr = document.createElement("div"); hdr.className = "ghdr";
     
     var wr = document.createElement("div"); wr.className = "ghdr-w";
-    wr.innerHTML = '<div class="stub-w"><div style="font-weight:600;font-size:12px">'+ps.length+' employé(s)</div><div style="font-size:10px;color:var(--tx3);margin-top:2px">Année '+y+'</div></div>'
+    wr.innerHTML = '<div class="stub-w"><div style="font-weight:600;font-size:12px">'+ps.length+' pers.</div><div style="font-size:10px;color:var(--tx3);margin-top:2px">'+y+'</div></div>'
         + '<div class="wks-row">' + wgs.map(w => '<div class="wk-lbl" style="width:'+(w.cnt*34)+'px;min-width:'+(w.cnt*34)+'px;max-width:'+(w.cnt*34)+'px;"><div style="font-size:14px;font-weight:800;color:var(--tx1);line-height:1.2;text-transform:uppercase;">' + Object.keys(w.mos).map(m=>MS[parseInt(m)]).join(" / ") + '</div><span style="font-size:10px;font-weight:600;color:var(--tx3);">S.'+p2(w.wk)+'</span></div>').join('') + '</div>';
     hdr.appendChild(wr);
 
@@ -1597,7 +1607,7 @@ function buildGrid() {
 
 function rCalendrier() {
   var div = document.createElement("div"); div.className = "planning"; div.innerHTML = getLegendBarHTML();
-  div.innerHTML += '<div class="month-nav"><div class="month-filters" style="width:100%; display:flex; gap:10px; align-items:center;"><span style="font-weight:bold; color:var(--primary);">Sélection :</span><select id="calSvc"><option value="">Tous les services</option>' + selOpts(ST.services, ST.calSvc) + '</select><select id="calPid" style="min-width:200px;"><option value="">-- Choisir un employé --</option>' + getCalPidOpts() + '</select><div class="period-toggles" style="margin-left:10px;"><button class="period-btn'+(ST.selectedPeriod==='full'?' active':'')+'" data-period="full">Jour</button><button class="period-btn'+(ST.selectedPeriod==='am'?' active':'')+'" data-period="am">Matin</button><button class="period-btn'+(ST.selectedPeriod==='pm'?' active':'')+'" data-period="pm">Aprem</button></div></div></div>';
+  div.innerHTML += '<div class="month-nav"><div class="month-filters" style="width:100%; display:flex; gap:10px; align-items:center;"><span style="font-weight:bold; color:var(--primary);">Sélection :</span><select id="calSvc"><option value="">Services</option>' + selOpts(ST.services, ST.calSvc) + '</select><select id="calPid" style="min-width:150px;"><option value="">-- Employé --</option>' + getCalPidOpts() + '</select><div class="period-toggles" style="margin-left:10px;"><button class="period-btn'+(ST.selectedPeriod==='full'?' active':'')+'" data-period="full">J</button><button class="period-btn'+(ST.selectedPeriod==='am'?' active':'')+'" data-period="am">M</button><button class="period-btn'+(ST.selectedPeriod==='pm'?' active':'')+'" data-period="pm">A</button></div></div></div>';
   var gc = document.createElement("div"); gc.className = "cal-wrapper";
   if (!ST.calPid) { gc.innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; color:var(--tx3); font-size:16px;">Veuillez sélectionner un employé ci-dessus.</div>'; } 
   else {
@@ -1738,7 +1748,7 @@ function rBilan(){
     }
   }
   
-  var filtresHdr = bm.type!=='person' ? `<div class="bm-hf"><select id="bmFs"><option value="">Tous les services</option>${selOpts(ST.services,fs)}</select><select id="bmFg"><option value="">Tous les groupes</option>${selOpts(ST.groupes,fg)}</select><button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>` : `<div class="bm-hf"><button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 Export CSV</button></div>`;
+  var filtresHdr = bm.type!=='person' ? `<div class="bm-hf"><select id="bmFs"><option value="">Services</option>${selOpts(ST.services,fs)}</select><select id="bmFg"><option value="">Groupes</option>${selOpts(ST.groupes,fg)}</select><button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 CSV</button></div>` : `<div class="bm-hf"><button class="btn p" id="bCsv" style="padding:6px 12px; margin-left:8px; font-size:11px">📥 CSV</button></div>`;
   ST._currentCsv = csvData; ST._currentCsvName = title.replace(/\s+/g, "_") + ".csv";
   ov.innerHTML = `<div class="bm"><div class="bm-hdr"><div class="bm-hl"><span style="font-size:24px; color:var(--primary)">${bm.type==='person'?'👤':'&#128337;'}</span><h2>${title}</h2>${filtresHdr}</div><button class="bm-x" id="clBm">&#10005;</button></div><div class="bm-body">${badge?`<div class="bm-bdg">${badge}</div>`:""}<div class="bm-stats">${stats}</div>${body}</div></div>`;
   return ov;
@@ -1787,18 +1797,19 @@ function rGrpModal() {
 
 function rPersonnel(){
   var div=document.createElement('div');div.className='tc'; var ps=filtP(true);
-  var html=`<div class="sh"><h2>Employés (${ps.length})</h2><div class="month-filters" style="margin-left:auto; margin-right:16px;"><select id="fSvc"><option value="">Tous les services</option>${selOpts(ST.services,ST.fSvc)}</select><select id="fGrp"><option value="">Tous les groupes</option>${selOpts(ST.groupes,ST.fGrp)}</select></div><button class="btn p" id="addP">+ Ajouter</button></div><table class="tbl"><thead><tr><th>Nom</th><th>Service</th><th>Groupe</th><th>Statut</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>`;
+  var html=`<div class="sh"><h2>Employés (${ps.length})</h2><div class="month-filters" style="margin-left:auto; margin-right:16px;"><select id="fSvc"><option value="">Services</option>${selOpts(ST.services,ST.fSvc)}</select><select id="fGrp"><option value="">Groupes</option>${selOpts(ST.groupes,ST.fGrp)}</select></div><button class="btn p" id="addP">+ Ajouter</button></div><table class="tbl"><thead><tr><th>Nom</th><th>Service</th><th>Groupe</th><th>Statut</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>`;
   ps.forEach(p => { html+=`<tr><td style="font-weight:600;">${p.nom}</td><td>${p.service}</td><td><span style="color:var(--primary);font-weight:600;">${p.groupe}</span></td><td>${p.inactive?'<span style="background:#fce7f3; color:#db2777; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Inactif</span>':'<span style="background:#dcfce7; color:#166534; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Actif</span>'}</td><td>${p.isAdmin?'<span style="background:#fef08a; color:#b45309; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Admin</span>':'<span style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:700;">Utilisateur</span>'}</td><td><button class="eb edit-pers" data-ep="${p.id}">Modifier</button></td></tr>`; });
   html+='</tbody></table>'; div.innerHTML=html; return div;
 }
 
 function rParametres(){
-  var div=document.createElement("div");div.className="tc"; div.innerHTML=`<div class="sh"><h2>Paramétrages</h2></div><div class="pg"><div class="pc" style="grid-column:1 / -1;"><h3>📤 Exporter l'intégralité du planning (Excel .xlsx)</h3><p style="font-size:13px;color:var(--tx2);margin-bottom:16px;">Générer un fichier Excel (.xlsx) contenant toutes les saisies actuelles.</p><button class="btn p" id="btnExportGlobalXlsx">Télécharger le Planning complet</button></div><div class="pc"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--bd1); padding-bottom:12px;"><h3 style="margin:0; border:none; padding:0;">Causes</h3><button class="btn p" id="addC" style="padding:4px 10px; font-size:12px;">+ Ajouter</button></div><div style="display:flex;flex-direction:column;gap:8px;">${ST.causes.map(c=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><div style="display:flex; align-items:center; gap:10px;"><div class="cdot" style="background:${c.color}"></div><span style="font-weight:600;">${c.label} <span style="color:var(--tx3); font-size:11px;">(${c.short})</span></span></div><div><button class="eb edit-cause" data-ec="${c.id}" style="padding:4px 8px; font-size:11px;">Modifier</button></div></div>`).join('')}</div></div><div class="pc"><h3>Services disponibles</h3><div style="display:flex;flex-direction:column;gap:8px;">${ST.services.map(s=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-weight:600; font-size:13px;">${s}</span><div style="display:flex; gap:6px;"><button class="eb edit-svc" data-editsvc="${s}" style="padding:4px 8px; font-size:11px;">Modifier</button><button class="eb del-svc" data-svc="${s}" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div></div>`).join('')}</div><div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newSvc" placeholder="Nouveau service..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addSvcBtn" style="padding:6px 12px;">Ajouter</button></div></div><div class="pc"><h3>Groupes disponibles</h3><div style="display:flex;flex-direction:column;gap:8px;">${ST.groupes.map(g=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-weight:600; font-size:13px;">${g}</span><div style="display:flex; gap:6px;"><button class="eb edit-grp" data-editgrp="${g}" style="padding:4px 8px; font-size:11px;">Modifier</button><button class="eb del-grp" data-grp="${g}" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">Supprimer</button></div></div>`).join('')}</div><div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newGrp" placeholder="Nouveau groupe..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addGrpBtn" style="padding:6px 12px;">Ajouter</button></div></div><div class="pc" style="grid-column:1 / -1;"><h3>📥 Importer un fichier Excel (.xlsx)</h3><div style="display:flex;gap:10px;align-items:center"><input type="file" id="excelImportFile" accept=".xlsx, .xls" style="flex:1;padding:8px;border:1px dashed var(--bd2);border-radius:var(--r1);background:var(--bg2)"><button class="btn p" id="btnImportExcel" style="background:#F97316; border-color:#F97316;">Lancer l'import</button></div><div id="importLog" style="margin-top:12px;font-size:13px;font-weight:600;color:var(--tx2)"></div></div></div>`;
+  var div=document.createElement("div");div.className="tc"; div.innerHTML=`<div class="sh"><h2>Paramétrages</h2></div><div class="pg"><div class="pc" style="grid-column:1 / -1;"><h3>📤 Export Planning (.xlsx)</h3><p style="font-size:13px;color:var(--tx2);margin-bottom:16px;">Générer un fichier Excel (.xlsx) complet.</p><button class="btn p" id="btnExportGlobalXlsx">Télécharger</button></div><div class="pc"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--bd1); padding-bottom:12px;"><h3 style="margin:0; border:none; padding:0;">Causes</h3><button class="btn p" id="addC" style="padding:4px 10px; font-size:12px;">+ Ajouter</button></div><div style="display:flex;flex-direction:column;gap:8px;">${ST.causes.map(c=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><div style="display:flex; align-items:center; gap:10px;"><div class="cdot" style="background:${c.color}"></div><span style="font-weight:600;">${c.label} <span style="color:var(--tx3); font-size:11px;">(${c.short})</span></span></div><div><button class="eb edit-cause" data-ec="${c.id}" style="padding:4px 8px; font-size:11px;">Modifier</button></div></div>`).join('')}</div></div><div class="pc"><h3>Services</h3><div style="display:flex;flex-direction:column;gap:8px;">${ST.services.map(s=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-weight:600; font-size:13px;">${s}</span><div style="display:flex; gap:6px;"><button class="eb edit-svc" data-editsvc="${s}" style="padding:4px 8px; font-size:11px;">Modifier</button><button class="eb del-svc" data-svc="${s}" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">🗑️</button></div></div>`).join('')}</div><div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newSvc" placeholder="Nouveau service..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addSvcBtn" style="padding:6px 12px;">+</button></div></div><div class="pc"><h3>Groupes</h3><div style="display:flex;flex-direction:column;gap:8px;">${ST.groupes.map(g=>`<div style="background:var(--bg2); border:1px solid var(--bd1); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-weight:600; font-size:13px;">${g}</span><div style="display:flex; gap:6px;"><button class="eb edit-grp" data-editgrp="${g}" style="padding:4px 8px; font-size:11px;">Modifier</button><button class="eb del-grp" data-grp="${g}" style="padding:4px 8px; font-size:11px; color:#E24B4A; border-color:#fca5a5; background:#fef2f2;">🗑️</button></div></div>`).join('')}</div><div style="width:100%; margin-top:16px; display:flex; gap:8px;"><input type="text" id="newGrp" placeholder="Nouveau groupe..." style="flex:1; padding:6px 12px; border:1px solid var(--bd1); border-radius:6px; background:var(--bg1); color:var(--tx1);"><button class="btn p" id="addGrpBtn" style="padding:6px 12px;">+</button></div></div><div class="pc" style="grid-column:1 / -1;"><h3>📥 Import Excel (.xlsx)</h3><div style="display:flex;gap:10px;align-items:center"><input type="file" id="excelImportFile" accept=".xlsx, .xls" style="flex:1;padding:8px;border:1px dashed var(--bd2);border-radius:var(--r1);background:var(--bg2)"><button class="btn p" id="btnImportExcel" style="background:#F97316; border-color:#F97316;">Lancer l'import</button></div><div id="importLog" style="margin-top:12px;font-size:13px;font-weight:600;color:var(--tx2)"></div></div></div>`;
   return div;
 }
 
 // === EVENEMENTS GLOBAUX ===
 document.addEventListener("click", function(e) {
+  if (e.target.closest('#toggleFocus')) { ST.focusMode = !ST.focusMode; renderApp(); return; }
   if (e.target.closest('#addP')) { ST.eModal = {}; renderApp(); return; }
   var btnEp = e.target.closest('.edit-pers'); if (btnEp) { ST.eModal = { pid: parseInt(btnEp.getAttribute("data-ep")) }; renderApp(); return; }
   if (e.target.closest('#addC')) { ST.pModal = {}; renderApp(); return; }
@@ -1845,7 +1856,7 @@ document.addEventListener("contextmenu", function(e) {
 
 function bindAppEvents(){
   document.querySelectorAll(".nav-tab").forEach(t=>t.addEventListener("click", e=>{ 
-      if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn")return; 
+      if(t.id==="lockBtn"||t.id==="themeToggle"||t.id==="logoutBtn"||t.id==="toggleFocus")return; 
       
       if(ST.tab === 'planning') { var gc = document.querySelector(".gc"); if(gc) { ST.scrollPlanX = gc.scrollLeft; ST.scrollPlanY = gc.scrollTop; } }
       else if (ST.tab === 'calendrier') { var cw = document.querySelector(".cal-wrapper"); if(cw) { ST.scrollCalX = cw.scrollLeft; ST.scrollCalY = cw.scrollTop; } }
