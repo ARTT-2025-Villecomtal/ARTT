@@ -1195,15 +1195,15 @@ function processDragSelection() {
                     } else if (targetPeriod === 'am') {
                         ST.events[baseKey].type = 'half';
                         if (!ST.events[baseKey].am) ST.events[baseKey].am = {};
-                        ST.events[k].am = {causeId: ST.selectedCauseId, comment: ''};
+                        ST.events[baseKey].am = {causeId: ST.selectedCauseId, comment: ''};
                         upserts.push({id: baseKey+'-am', cause_id: ST.selectedCauseId, comment: ''});
-                        if(existing && existing.pm) deletes.push(baseKey);
+                        if(existing && existing.type === 'full') deletes.push(baseKey);
                     } else if (targetPeriod === 'pm') {
                         ST.events[baseKey].type = 'half';
                         if (!ST.events[baseKey].pm) ST.events[baseKey].pm = {};
-                        ST.events[k].pm = {causeId: ST.selectedCauseId, comment: ''};
+                        ST.events[baseKey].pm = {causeId: ST.selectedCauseId, comment: ''};
                         upserts.push({id: baseKey+'-pm', cause_id: ST.selectedCauseId, comment: ''});
-                        if(existing && existing.am) deletes.push(baseKey);
+                        if(existing && existing.type === 'full') deletes.push(baseKey);
                     }
                 }
             }
