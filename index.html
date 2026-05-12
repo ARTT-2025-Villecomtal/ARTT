@@ -22,7 +22,7 @@
   --tx1:#f2f2f7;--tx2:#aeaeb2;--tx3:#636366;
   --bd1:rgba(255,255,255,0.12);--bd2:rgba(255,255,255,0.25);
 }
-body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13px; overflow:hidden;}
+body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13px; overflow:hidden; height: 100dvh;}
 
 /* === BARRES DE DÉFILEMENT === */
 ::-webkit-scrollbar { width: 10px; height: 14px; }
@@ -82,7 +82,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .month-btn.active{background:var(--primary);color:white;border-color:var(--primary);box-shadow:0 2px 5px rgba(29,158,117,0.3)}
 
 /* === GRILLE DE PLANNING === */
-.gc{flex:1;overflow:auto; min-height:0; padding-bottom: 10px;}
+.gc{flex:1;overflow:auto; min-height:0; padding-bottom: 10px; -webkit-overflow-scrolling: touch;}
 .ghdr{display:flex;flex-direction:column;position:sticky;top:0;z-index:20;background:var(--bg1);box-shadow:0 2px 5px rgba(0,0,0,0.05)}
 
 .ghdr-w, .ghdr-d { display:flex; min-width: max-content; background:var(--bg1); } 
@@ -127,7 +127,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 .ev-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:white;box-shadow:0 0 2px rgba(0,0,0,0.8); z-index:2;}
 
 /* === CALENDRIER PERSONNEL === */
-.cal-wrapper { flex:1; overflow:auto; background:var(--bg3); padding:8px 16px; min-height:0; }
+.cal-wrapper { flex:1; overflow:auto; background:var(--bg3); padding:8px 16px; min-height:0; -webkit-overflow-scrolling: touch;}
 .cal-grid { display:flex; gap:8px; min-width:100%; min-height:100%; height:max-content; padding-bottom:8px; }
 .cal-col { flex:1; min-width:120px; background:var(--bg1); border:1px solid var(--bd2); border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); display:flex; flex-direction:column; }
 .cal-month-name { background:var(--bg2); color:var(--primary); text-align:center; padding:6px 0; font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:1px; position:sticky; top:0; z-index:10; border-bottom:1px solid var(--bd2); flex-shrink:0; }
@@ -144,7 +144,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 /* === MODALES === */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:100;animation:fadeIn 0.2s}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.modal{background:var(--bg1);border-radius:var(--r2);border:1px solid var(--bd1);padding:24px;min-width:320px;max-width:640px;width:95%;box-shadow:0 10px 25px rgba(0,0,0,0.15)}
+.modal{background:var(--bg1);border-radius:var(--r2);border:1px solid var(--bd1);padding:24px;min-width:320px;max-width:850px;width:95%;box-shadow:0 10px 25px rgba(0,0,0,0.15)}
 .modal h3{font-size:18px;font-weight:600;margin-bottom:12px}
 .mr{margin-bottom:16px}
 .mr label{display:block;font-size:13px;color:var(--tx2);margin-bottom:6px;font-weight:600}
@@ -220,7 +220,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
 
 /* === OPTIMISATIONS MOBILES / SMARTPHONES === */
 @media (max-width: 768px) {
-  .app { min-height: auto; }
+  .app { height: 100dvh; }
   .topbar { flex-direction: row; flex-wrap: wrap; padding: 6px 10px; gap: 8px; justify-content: space-between; }
   .logo-container { flex-direction: row !important; margin: 0 !important; gap: 6px; }
   .logo-container img { height: 24px !important; width: auto !important; max-width: 60px; margin:0 !important; position: static !important; }
@@ -250,7 +250,7 @@ body{font-family:var(--font);background:var(--bg3);color:var(--tx1);font-size:13
   .nc .nom { font-size: 10px !important; white-space: normal !important; line-height: 1.1; }
   .nc .svc, .nc .grp { display: none; } 
   .btn-bp { display: none; }
-  .modal { width: 95%; min-width: 95%; padding: 16px; margin: 10px; }
+  .modal { width: 95%; min-width: 95%; padding: 16px; margin: 10px; max-height: 90vh; overflow-y: auto;}
   .half-day-split { flex-direction: column; gap:12px; }
   .mr input, .mr select, .mr textarea { font-size: 16px !important; }
   .bm { width: 95%; max-height: 95vh; margin: 10px; }
@@ -992,7 +992,7 @@ function scrollTd(){
     var offset = todayEl.offsetLeft - nameWidth - (gc.clientWidth / 2) + 14;
     gc.scrollTo({left: Math.max(0, offset), behavior: 'smooth'});
     setTimeout(function(){ 
-        if(document.querySelector(".gc")) ST.lastScrollX = document.querySelector(".gc").scrollLeft;
+        if(document.querySelector(".gc")) ST.scrollPlanX = document.querySelector(".gc").scrollLeft;
         ST.ignoreScroll = false; 
     }, 600);
   }
@@ -1299,7 +1299,6 @@ function renderLogin() {
             if (p.isAdmin) ST.isAdmin = true;
             renderApp();
             showToast("Compte créé avec succès !");
-            setTimeout(scrollTd, 100);
         } else {
             if(p.pwd === pwd) {
                 localStorage.setItem('artt-user', pid);
@@ -1308,7 +1307,6 @@ function renderLogin() {
                 if (p.isAdmin) ST.isAdmin = true;
                 renderApp();
                 showToast("Connexion réussie !");
-                setTimeout(scrollTd, 100);
             } else {
                 showToast("Mot de passe incorrect", true);
             }
@@ -1450,9 +1448,19 @@ function renderApp(){
       if (ST.tab === 'planning') {
           var newGc = document.querySelector(".gc");
           if (newGc) {
-              newGc.scrollLeft = ST.scrollPlanX || 0;
-              newGc.scrollTop = ST.scrollPlanY || 0;
-              updateMonthHighlight(ST.scrollPlanX || 0);
+              if (!ST.initialScrollDone && ST.year === TODAY.getFullYear()) {
+                  var todayEl = document.querySelector(".ec.td");
+                  if (todayEl) {
+                      var offset = todayEl.offsetLeft - getNameColWidth() - (newGc.clientWidth / 2) + 14;
+                      newGc.scrollLeft = Math.max(0, offset);
+                      ST.scrollPlanX = newGc.scrollLeft;
+                  }
+                  ST.initialScrollDone = true;
+              } else {
+                  newGc.scrollLeft = ST.scrollPlanX || 0;
+                  newGc.scrollTop = ST.scrollPlanY || 0;
+              }
+              updateMonthHighlight(newGc.scrollLeft);
           }
       } else if (ST.tab === 'calendrier') {
           var newCw = document.querySelector(".cal-wrapper");
@@ -1624,7 +1632,8 @@ function rTutoModal() {
 function rModal(){
   var m2=ST.modal, ov=document.createElement('div'); ov.className='ov'; ov.id='mOv';
   var p=ST.personnels.find(x=>String(x.id)===String(m2.pid)), ev=ST.events[m2.key], dw=dow(ST.year,m2.month,m2.day), wk=isoWk(ST.year,m2.month,m2.day);
-  var fe=isFe(ST.year,m2.month,m2.day), va=isVa(ST.year,m2.month,m2.day), we=isWe(ST.year,m2.month,m2.day), fullC='', fullCm='', astC='', astCm='';
+  var fe=isFe(ST.year,m2.month,m2.day), va=isVa(ST.year,m2.month,m2.day), we=isWe(ST.year,m2.month,m2.day);
+  var amC='', amCm='', pmC='', pmCm='', astC='', astCm='';
   
   if(ev){
       if(ev.astreinte) {
@@ -1632,36 +1641,46 @@ function rModal(){
           astCm = ev.astreinte.comment;
       }
       if(ev.type==='full'){
-          fullC=ev.causeId; 
-          fullCm=ev.comment;
+          amC = pmC = ev.causeId; 
+          amCm = pmCm = ev.comment;
       }else if(ev.type==='half'){
-          if(ev.am){fullC=ev.am.causeId; fullCm=ev.am.comment;}
-          else if(ev.pm){fullC=ev.pm.causeId; fullCm=ev.pm.comment;}
+          if(ev.am){amC=ev.am.causeId; amCm=ev.am.comment;}
+          if(ev.pm){pmC=ev.pm.causeId; pmCm=ev.pm.comment;}
       }
   }
-  if(fullCm==="Import Excel")fullCm=""; 
-  if(astCm==="Import Excel")astCm=""; 
+  if(amCm==="Import Excel") amCm=""; 
+  if(pmCm==="Import Excel") pmCm=""; 
+  if(astCm==="Import Excel") astCm=""; 
   
   var badge=fe?' <span style="background:#fde68a;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Férié</span>':va?' <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Vacances (Zone C)</span>':we?' <span style="background:var(--bd1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">Week-end</span>':'';
   
-  var o_full='<option value="">&mdash; Aucune &mdash;</option>'; 
+  var o_am='<option value="">&mdash; Aucune &mdash;</option>'; 
+  var o_pm='<option value="">&mdash; Aucune &mdash;</option>'; 
   var o_ast='<option value="">&mdash; Aucune &mdash;</option>'; 
   ST.causes.forEach(c => {
       var isAst = c.label.toUpperCase().indexOf('ASTREINTE') > -1;
-      if (isAst) o_ast+='<option value="'+c.id+'"'+(astC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>';
-      else o_full+='<option value="'+c.id+'"'+(fullC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>';
+      if (isAst) {
+          o_ast+='<option value="'+c.id+'"'+(astC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>';
+      } else {
+          o_am+='<option value="'+c.id+'"'+(amC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>';
+          o_pm+='<option value="'+c.id+'"'+(pmC===c.id?' selected':'')+'>'+c.id+' — '+c.label+'</option>';
+      }
   });
   
-  ov.innerHTML=`<div class="modal"><h3>${p?p.nom:''}</h3>
+  ov.innerHTML=`<div class="modal" style="max-width:850px;"><h3>${p?p.nom:''}</h3>
   <div style="font-size:13px;color:var(--tx2);margin-bottom:16px;display:flex;align-items:center;">${DL[dw]} ${m2.day} ${MO[m2.month]} ${ST.year} <span style="margin:0 8px">&mdash;</span> S${p2(wk)}${badge}</div>
   <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:200px;">
-          <div class="mr"><label style="color:var(--primary)">Absence Principale</label><select id="mC_full" style="margin-bottom:8px;">${o_full}</select></div>
-          <div class="mr"><label>Commentaire</label><input id="mCm_full" value="${fullCm}" placeholder="Commentaire..."/></div>
+      <div style="flex:1; min-width:200px; background:var(--bg2); padding:12px; border-radius:8px; border:1px solid var(--bd1);">
+          <div class="mr"><label style="color:var(--primary)">Matin</label><select id="mC_am" style="margin-bottom:8px;">${o_am}</select></div>
+          <div class="mr" style="margin-bottom:0;"><label>Commentaire (Matin)</label><input id="mCm_am" value="${amCm}" placeholder="Commentaire..."/></div>
       </div>
-      <div style="flex:1; min-width:200px;">
+      <div style="flex:1; min-width:200px; background:var(--bg2); padding:12px; border-radius:8px; border:1px solid var(--bd1);">
+          <div class="mr"><label style="color:var(--primary)">Après-midi</label><select id="mC_pm" style="margin-bottom:8px;">${o_pm}</select></div>
+          <div class="mr" style="margin-bottom:0;"><label>Commentaire (Aprem)</label><input id="mCm_pm" value="${pmCm}" placeholder="Commentaire..."/></div>
+      </div>
+      <div style="flex:1; min-width:200px; background:#fef2f2; padding:12px; border-radius:8px; border:1px solid #fca5a5;">
           <div class="mr"><label style="color:#E24B4A">Astreinte</label><select id="mC_ast" style="margin-bottom:8px;">${o_ast}</select></div>
-          <div class="mr"><label>Commentaire</label><input id="mCm_ast" value="${astCm}" placeholder="Commentaire..."/></div>
+          <div class="mr" style="margin-bottom:0;"><label>Commentaire (Astreinte)</label><input id="mCm_ast" value="${astCm}" placeholder="Commentaire..."/></div>
       </div>
   </div>
   <div class="mbtns">${ev?'<button class="btn d" id="dEv">Vider la case</button>':''}<button class="btn" id="cMod">Annuler</button><button class="btn p" id="sMod">Enregistrer</button></div></div>`;
@@ -1780,48 +1799,48 @@ function rParametres(){
 
 // === EVENEMENTS GLOBAUX ===
 document.addEventListener("click", function(e) {
-    if (e.target.closest('#addP')) { ST.eModal = {}; renderApp(); return; }
-    var btnEp = e.target.closest('.edit-pers'); if (btnEp) { ST.eModal = { pid: parseInt(btnEp.getAttribute("data-ep")) }; renderApp(); return; }
-    if (e.target.closest('#addC')) { ST.pModal = {}; renderApp(); return; }
-    var btnEc = e.target.closest('.edit-cause'); if (btnEc) { ST.pModal = Object.assign({}, ST.causes.find(c=>c.id===parseInt(btnEc.getAttribute("data-ec")))); renderApp(); return; }
-    if (e.target.closest('#addSvcBtn')) { var valSvc = document.getElementById("newSvc").value.trim(); if(valSvc && ST.services.indexOf(valSvc) === -1){ ST.services.push(valSvc); ST.services.sort(); saveConfig(); renderApp(); } return; }
-    var btnEditSvc = e.target.closest('.edit-svc'); if (btnEditSvc) { ST.svcModal = { oldVal: btnEditSvc.getAttribute("data-editsvc") }; renderModals(); return; }
-    var btnDelSvc = e.target.closest('.del-svc'); if (btnDelSvc) { ST.services = ST.services.filter(s=>s !== btnDelSvc.getAttribute("data-svc")); saveConfig(); renderApp(); return; }
-    if (e.target.closest('#addGrpBtn')) { var valGrp = document.getElementById("newGrp").value.trim(); if(valGrp && ST.groupes.indexOf(valGrp) === -1){ ST.groupes.push(valGrp); ST.groupes.sort(); saveConfig(); renderApp(); } return; }
-    var btnEditGrp = e.target.closest('.edit-grp'); if (btnEditGrp) { ST.grpModal = { oldVal: btnEditGrp.getAttribute("data-editgrp") }; renderModals(); return; }
-    var btnDelGrp = e.target.closest('.del-grp'); if (btnDelGrp) { ST.groupes = ST.groupes.filter(g=>g !== btnDelGrp.getAttribute("data-grp")); saveConfig(); renderApp(); return; }
+  if (e.target.closest('#addP')) { ST.eModal = {}; renderApp(); return; }
+  var btnEp = e.target.closest('.edit-pers'); if (btnEp) { ST.eModal = { pid: parseInt(btnEp.getAttribute("data-ep")) }; renderApp(); return; }
+  if (e.target.closest('#addC')) { ST.pModal = {}; renderApp(); return; }
+  var btnEc = e.target.closest('.edit-cause'); if (btnEc) { ST.pModal = Object.assign({}, ST.causes.find(c=>c.id===parseInt(btnEc.getAttribute("data-ec")))); renderApp(); return; }
+  if (e.target.closest('#addSvcBtn')) { var valSvc = document.getElementById("newSvc").value.trim(); if(valSvc && ST.services.indexOf(valSvc) === -1){ ST.services.push(valSvc); ST.services.sort(); saveConfig(); renderApp(); } return; }
+  var btnEditSvc = e.target.closest('.edit-svc'); if (btnEditSvc) { ST.svcModal = { oldVal: btnEditSvc.getAttribute("data-editsvc") }; renderModals(); return; }
+  var btnDelSvc = e.target.closest('.del-svc'); if (btnDelSvc) { ST.services = ST.services.filter(s=>s !== btnDelSvc.getAttribute("data-svc")); saveConfig(); renderApp(); return; }
+  if (e.target.closest('#addGrpBtn')) { var valGrp = document.getElementById("newGrp").value.trim(); if(valGrp && ST.groupes.indexOf(valGrp) === -1){ ST.groupes.push(valGrp); ST.groupes.sort(); saveConfig(); renderApp(); } return; }
+  var btnEditGrp = e.target.closest('.edit-grp'); if (btnEditGrp) { ST.grpModal = { oldVal: btnEditGrp.getAttribute("data-editgrp") }; renderModals(); return; }
+  var btnDelGrp = e.target.closest('.del-grp'); if (btnDelGrp) { ST.groupes = ST.groupes.filter(g=>g !== btnDelGrp.getAttribute("data-grp")); saveConfig(); renderApp(); return; }
 });
 
 document.addEventListener("mousedown", function(e) {
-    if (e.button !== 0 || !ST.selectedCauseId) return; 
-    var ec = e.target.closest('.ec[data-pid]');
-    if (ec) {
-        e.preventDefault(); 
-        var pid = parseInt(ec.getAttribute("data-pid"));
-        if (!ST.isAdmin && String(pid) !== String(ST.currentUser)) { showToast("Vous ne pouvez modifier que votre propre planning.", true); return; }
-        var day = parseInt(ec.getAttribute("data-day")), mo = parseInt(ec.getAttribute("data-month"));
-        if(pid && day) { ST.drag.active = true; ST.drag.pid = pid; ST.drag.startDt = new Date(ST.year, mo, day).getTime(); ST.drag.endDt = ST.drag.startDt; updateDragHighlight(); }
-    }
+  if (e.button !== 0 || !ST.selectedCauseId) return; 
+  var ec = e.target.closest('.ec[data-pid]');
+  if (ec) {
+      e.preventDefault(); 
+      var pid = parseInt(ec.getAttribute("data-pid"));
+      if (!ST.isAdmin && String(pid) !== String(ST.currentUser)) { showToast("Vous ne pouvez modifier que votre propre planning.", true); return; }
+      var day = parseInt(ec.getAttribute("data-day")), mo = parseInt(ec.getAttribute("data-month"));
+      if(pid && day) { ST.drag.active = true; ST.drag.pid = pid; ST.drag.startDt = new Date(ST.year, mo, day).getTime(); ST.drag.endDt = ST.drag.startDt; updateDragHighlight(); }
+  }
 });
 
 document.addEventListener("mouseover", function(e) {
-    if(!ST.drag.active) return;
-    var ec = e.target.closest('.ec[data-pid]');
-    if (ec && parseInt(ec.getAttribute("data-pid")) === ST.drag.pid) { ST.drag.endDt = new Date(ST.year, parseInt(ec.getAttribute("data-month")), parseInt(ec.getAttribute("data-day"))).getTime(); updateDragHighlight(); }
+  if(!ST.drag.active) return;
+  var ec = e.target.closest('.ec[data-pid]');
+  if (ec && parseInt(ec.getAttribute("data-pid")) === ST.drag.pid) { ST.drag.endDt = new Date(ST.year, parseInt(ec.getAttribute("data-month")), parseInt(ec.getAttribute("data-day"))).getTime(); updateDragHighlight(); }
 });
 
 document.addEventListener("mouseup", function(e) {
-    if(e.button === 0 && ST.drag.active) { ST.drag.active = false; processDragSelection(); updateDragHighlight(); }
+  if(e.button === 0 && ST.drag.active) { ST.drag.active = false; processDragSelection(); updateDragHighlight(); }
 });
 
 document.addEventListener("contextmenu", function(e) {
-    var ec = e.target.closest('.ec[data-pid]');
-    if(ec) {
-        e.preventDefault(); var pid = parseInt(ec.getAttribute("data-pid"));
-        if (!ST.isAdmin && String(pid) !== String(ST.currentUser)) { showToast("Vous ne pouvez modifier que votre propre planning.", true); return; }
-        var day = parseInt(ec.getAttribute("data-day")), mo = parseInt(ec.getAttribute("data-month")), key = ec.getAttribute("data-key");
-        if(pid && day) { ST.modal = {pid:pid, day:day, month:mo, key:key}; renderApp(); }
-    }
+  var ec = e.target.closest('.ec[data-pid]');
+  if(ec) {
+      e.preventDefault(); var pid = parseInt(ec.getAttribute("data-pid"));
+      if (!ST.isAdmin && String(pid) !== String(ST.currentUser)) { showToast("Vous ne pouvez modifier que votre propre planning.", true); return; }
+      var day = parseInt(ec.getAttribute("data-day")), mo = parseInt(ec.getAttribute("data-month")), key = ec.getAttribute("data-key");
+      if(pid && day) { ST.modal = {pid:pid, day:day, month:mo, key:key}; renderApp(); }
+  }
 });
 
 function bindAppEvents(){
@@ -1831,7 +1850,12 @@ function bindAppEvents(){
       if(ST.tab === 'planning') { var gc = document.querySelector(".gc"); if(gc) { ST.scrollPlanX = gc.scrollLeft; ST.scrollPlanY = gc.scrollTop; } }
       else if (ST.tab === 'calendrier') { var cw = document.querySelector(".cal-wrapper"); if(cw) { ST.scrollCalX = cw.scrollLeft; ST.scrollCalY = cw.scrollTop; } }
       
-      if(t.hasAttribute("data-tab")){ST.tab=t.getAttribute("data-tab");renderApp();} 
+      if(t.hasAttribute("data-tab")){
+          var newTab = t.getAttribute("data-tab");
+          if(newTab === 'planning') ST.initialScrollDone = false;
+          ST.tab = newTab;
+          renderApp();
+      } 
   }));
   
   var lgBtn = document.getElementById("logoutBtn"); if(lgBtn) lgBtn.addEventListener("click", ()=>{ localStorage.removeItem('artt-user'); ST.isAdmin=false; ST.currentUser=null; ST.tab='calendrier'; renderApp(); });
@@ -1916,23 +1940,48 @@ function bindModalEvents() {
   if(mOv)mOv.addEventListener("click", e=>{if(e.target===mOv){ST.modal=null;renderApp();}});
   if(cMod)cMod.addEventListener("click", ()=>{ST.modal=null;renderApp();});
   if(dEvBtn)dEvBtn.addEventListener("click", ()=>{ var k=ST.modal.key; delete ST.events[k]; ST.modal=null; renderApp(); saveEvsDB([], [k, k+'-am', k+'-pm', k+'-ast']).then(()=>showToast("Absence supprimée")); });
+  
   if(sMod)sMod.addEventListener("click", ()=>{
-    var cid_full=parseInt(document.getElementById("mC_full").value)||null, cm_full=document.getElementById("mCm_full").value.trim();
+    var cid_am=parseInt(document.getElementById("mC_am").value)||null, cm_am=document.getElementById("mCm_am").value.trim();
+    var cid_pm=parseInt(document.getElementById("mC_pm").value)||null, cm_pm=document.getElementById("mCm_pm").value.trim();
     var cid_ast=parseInt(document.getElementById("mC_ast").value)||null, cm_ast=document.getElementById("mCm_ast").value.trim();
     var k=ST.modal.key;
     var up=[], del=[];
     
     if (!ST.events[k]) ST.events[k] = {type: 'empty'};
     
-    if (cid_full) { 
+    if (cid_am && cid_pm && cid_am === cid_pm && cm_am === cm_pm) {
         ST.events[k].type = 'full';
-        ST.events[k].causeId = cid_full;
-        ST.events[k].comment = cm_full; 
-        up.push({id:k, cause_id:cid_full, comment:cm_full}); 
+        ST.events[k].causeId = cid_am;
+        ST.events[k].comment = cm_am; 
+        up.push({id:k, cause_id:cid_am, comment:cm_am}); 
         del.push(k+'-am', k+'-pm'); 
         delete ST.events[k].am;
         delete ST.events[k].pm;
-    } else { 
+    } else if (cid_am || cid_pm) {
+        ST.events[k].type = 'half';
+        delete ST.events[k].causeId;
+        delete ST.events[k].comment;
+        del.push(k); 
+
+        if (cid_am) {
+            if (!ST.events[k].am) ST.events[k].am = {};
+            ST.events[k].am = {causeId: cid_am, comment: cm_am};
+            up.push({id:k+'-am', cause_id:cid_am, comment:cm_am});
+        } else {
+            delete ST.events[k].am;
+            del.push(k+'-am');
+        }
+
+        if (cid_pm) {
+            if (!ST.events[k].pm) ST.events[k].pm = {};
+            ST.events[k].pm = {causeId: cid_pm, comment: cm_pm};
+            up.push({id:k+'-pm', cause_id:cid_pm, comment:cm_pm});
+        } else {
+            delete ST.events[k].pm;
+            del.push(k+'-pm');
+        }
+    } else {
         ST.events[k].type = 'empty';
         delete ST.events[k].causeId;
         delete ST.events[k].comment;
@@ -2008,8 +2057,6 @@ function bindModalEvents() {
 // === DEMARRAGE ===
 async function fetchVacances() {
     try {
-        // API Open Data du Gouvernement (Education Nationale) - Zone C
-        // On passe à 1000 résultats (rows=1000) pour ne rater aucune année future
         const res = await fetch("https://data.education.gouv.fr/api/records/1.0/search/?dataset=fr-en-calendrier-scolaire&q=&rows=1000&refine.zones=Zone+C&refine.population=%C3%89l%C3%A8ves");
         const data = await res.json();
         if (data && data.records) {
@@ -2020,8 +2067,6 @@ async function fetchVacances() {
                 }
             });
             if (newVacances.length > 0) {
-                // Au lieu d'écraser, on FUSIONNE les dates de l'Etat avec nos prévisions manuelles
-                // Ainsi, on a les vraies dates quand elles existent, et des dates par défaut pour 2028+
                 VACANCES = newVacances.concat(VACANCES);
             }
         }
@@ -2030,14 +2075,13 @@ async function fetchVacances() {
     }
 }
 
-// On lance la récupération des vacances avant de démarrer l'application
 fetchVacances().then(function() {
     if(checkGasUrl()) {
         loadDB().then(function(res){
           if(res){ ST.events=Object.assign({},XLS,res.events); if(res.personnels&&res.personnels.length>0)ST.personnels=res.personnels; if(res.causes&&res.causes.length>0)ST.causes=res.causes; if(res.services&&res.services.length>0)ST.services=res.services; if(res.groupes&&res.groupes.length>0)ST.groupes=res.groupes; }
-          ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Planning synchronisé");
+          ST.loaded=true; renderApp(); showToast("Planning synchronisé");
         }).catch(function(e){
-          console.warn("Mode hors ligne"); ST.loaded=true; renderApp(); if(!ST.initialScrollDone){scrollTd();ST.initialScrollDone=true;} showToast("Mode hors ligne activé", true);
+          console.warn("Mode hors ligne"); ST.loaded=true; renderApp(); showToast("Mode hors ligne activé", true);
         });
 
         setInterval(function(){
